@@ -1,8 +1,9 @@
 #ifndef __LIBSSH2_CRYPTO_H
 #define __LIBSSH2_CRYPTO_H
-/* Copyright (C) 2009, 2010 Simon Josefsson
- * Copyright (C) 2006, 2007 The Written Word, Inc.  All rights reserved.
- * Copyright (C) 2010-2019 Daniel Stenberg
+/* Copyright (C) Simon Josefsson
+ * Copyright (C) The Written Word, Inc.
+ * Copyright (C) Daniel Stenberg
+ * All rights reserved.
  *
  * Redistribution and use in source and binary forms,
  * with or without modification, are permitted provided
@@ -36,26 +37,87 @@
  * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
  * USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
  * OF SUCH DAMAGE.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 #if defined(LIBSSH2_OPENSSL) || defined(LIBSSH2_WOLFSSL)
 #include "openssl.h"
-#endif
-
-#ifdef LIBSSH2_LIBGCRYPT
+#elif defined(LIBSSH2_LIBGCRYPT)
 #include "libgcrypt.h"
-#endif
-
-#ifdef LIBSSH2_WINCNG
-#include "wincng.h"
-#endif
-
-#ifdef LIBSSH2_OS400QC3
-#include "os400qc3.h"
-#endif
-
-#ifdef LIBSSH2_MBEDTLS
+#elif defined(LIBSSH2_MBEDTLS)
 #include "mbedtls.h"
+#elif defined(LIBSSH2_OS400QC3)
+#include "os400qc3.h"
+#elif defined(LIBSSH2_WINCNG)
+#include "wincng.h"
+#else
+#error "no cryptography backend selected"
+#endif
+
+#ifdef LIBSSH2_NO_MD5
+#undef LIBSSH2_MD5
+#define LIBSSH2_MD5 0
+#endif
+
+#ifdef LIBSSH2_NO_HMAC_RIPEMD
+#undef LIBSSH2_HMAC_RIPEMD
+#define LIBSSH2_HMAC_RIPEMD 0
+#endif
+
+#ifdef LIBSSH2_NO_DSA
+#undef LIBSSH2_DSA
+#define LIBSSH2_DSA 0
+#endif
+
+#ifdef LIBSSH2_NO_RSA
+#undef LIBSSH2_RSA
+#define LIBSSH2_RSA 0
+#endif
+
+#ifdef LIBSSH2_NO_RSA_SHA1
+#undef LIBSSH2_RSA_SHA1
+#define LIBSSH2_RSA_SHA1 0
+#endif
+
+#ifdef LIBSSH2_NO_ECDSA
+#undef LIBSSH2_ECDSA
+#define LIBSSH2_ECDSA 0
+#endif
+
+#ifdef LIBSSH2_NO_ED25519
+#undef LIBSSH2_ED25519
+#define LIBSSH2_ED25519 0
+#endif
+
+#ifdef LIBSSH2_NO_AES_CTR
+#undef LIBSSH2_AES_CTR
+#define LIBSSH2_AES_CTR 0
+#endif
+
+#ifdef LIBSSH2_NO_AES_CBC
+#undef LIBSSH2_AES_CBC
+#define LIBSSH2_AES_CBC 0
+#endif
+
+#ifdef LIBSSH2_NO_BLOWFISH
+#undef LIBSSH2_BLOWFISH
+#define LIBSSH2_BLOWFISH 0
+#endif
+
+#ifdef LIBSSH2_NO_RC4
+#undef LIBSSH2_RC4
+#define LIBSSH2_RC4 0
+#endif
+
+#ifdef LIBSSH2_NO_CAST
+#undef LIBSSH2_CAST
+#define LIBSSH2_CAST 0
+#endif
+
+#ifdef LIBSSH2_NO_3DES
+#undef LIBSSH2_3DES
+#define LIBSSH2_3DES 0
 #endif
 
 #define LIBSSH2_ED25519_KEY_LEN 32
@@ -83,16 +145,18 @@ int _libssh2_rsa_new_private(libssh2_rsa_ctx ** rsa,
                              LIBSSH2_SESSION * session,
                              const char *filename,
                              unsigned const char *passphrase);
+#if LIBSSH2_RSA_SHA1
 int _libssh2_rsa_sha1_verify(libssh2_rsa_ctx * rsa,
                              const unsigned char *sig,
-                             unsigned long sig_len,
-                             const unsigned char *m, unsigned long m_len);
+                             size_t sig_len,
+                             const unsigned char *m, size_t m_len);
 int _libssh2_rsa_sha1_sign(LIBSSH2_SESSION * session,
                            libssh2_rsa_ctx * rsactx,
                            const unsigned char *hash,
                            size_t hash_len,
                            unsigned char **signature,
                            size_t *signature_len);
+#endif
 #if LIBSSH2_RSA_SHA2
 int _libssh2_rsa_sha2_sign(LIBSSH2_SESSION * session,
                            libssh2_rsa_ctx * rsactx,
@@ -103,8 +167,8 @@ int _libssh2_rsa_sha2_sign(LIBSSH2_SESSION * session,
 int _libssh2_rsa_sha2_verify(libssh2_rsa_ctx * rsa,
                              size_t hash_len,
                              const unsigned char *sig,
-                             unsigned long sig_len,
-                             const unsigned char *m, unsigned long m_len);
+                             size_t sig_len,
+                             const unsigned char *m, size_t m_len);
 #endif
 int _libssh2_rsa_new_private_frommemory(libssh2_rsa_ctx ** rsa,
                                         LIBSSH2_SESSION * session,
@@ -130,10 +194,10 @@ int _libssh2_dsa_new_private(libssh2_dsa_ctx ** dsa,
                              unsigned const char *passphrase);
 int _libssh2_dsa_sha1_verify(libssh2_dsa_ctx * dsactx,
                              const unsigned char *sig,
-                             const unsigned char *m, unsigned long m_len);
+                             const unsigned char *m, size_t m_len);
 int _libssh2_dsa_sha1_sign(libssh2_dsa_ctx * dsactx,
                            const unsigned char *hash,
-                           unsigned long hash_len, unsigned char *sig);
+                           size_t hash_len, unsigned char *sig);
 int _libssh2_dsa_new_private_frommemory(libssh2_dsa_ctx ** dsa,
                                         LIBSSH2_SESSION * session,
                                         const char *filedata,
@@ -184,7 +248,7 @@ _libssh2_ecdh_gen_k(_libssh2_bn **k, _libssh2_ec_key *private_key,
 
 int
 _libssh2_ecdsa_sign(LIBSSH2_SESSION *session, libssh2_ecdsa_ctx *ec_ctx,
-                    const unsigned char *hash, unsigned long hash_len,
+                    const unsigned char *hash, size_t hash_len,
                     unsigned char **signature, size_t *signature_len);
 
 int _libssh2_ecdsa_new_private_frommemory(libssh2_ecdsa_ctx ** ec_ctx,
@@ -246,7 +310,7 @@ int
 _libssh2_ed25519_new_public(libssh2_ed25519_ctx **ed_ctx,
                             LIBSSH2_SESSION *session,
                             const unsigned char *raw_pub_key,
-                            const uint8_t key_len);
+                            const size_t key_len);
 
 int
 _libssh2_ed25519_sign(libssh2_ed25519_ctx *ctx, LIBSSH2_SESSION *session,
@@ -281,7 +345,8 @@ int _libssh2_cipher_init(_libssh2_cipher_ctx * h,
 
 int _libssh2_cipher_crypt(_libssh2_cipher_ctx * ctx,
                           _libssh2_cipher_type(algo),
-                          int encrypt, unsigned char *block, size_t blocksize);
+                          int encrypt, unsigned char *block, size_t blocksize,
+                          int firstlast);
 
 int _libssh2_pub_priv_keyfile(LIBSSH2_SESSION *session,
                               unsigned char **method,
@@ -324,7 +389,7 @@ int _libssh2_sk_pub_keyfilememory(LIBSSH2_SESSION *session,
  * @related _libssh2_key_sign_algorithm()
  * @param key_method current key method, usually the default key sig method
  * @param key_method_len length of the key method buffer
- * @result comma seperated list of supported upgrade options per RFC 8332, if
+ * @result comma separated list of supported upgrade options per RFC 8332, if
  * there is no upgrade option return NULL
  */
 
