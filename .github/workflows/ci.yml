@@ -18,14 +18,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: 'checksrc'
         run: ./ci/checksrc.sh
 
   spellcheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: 'install tools'
         run: pip install -U codespell
       - name: 'spellcheck'
@@ -38,7 +38,7 @@ jobs:
     env:
       CC: clang
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: 'cmake'
         run: |
           sudo apt-get --quiet 2 --option Dpkg::Use-Pty=0 install libssl-dev
@@ -87,7 +87,7 @@ jobs:
     env:
       CC: ${{ matrix.compiler }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: 'install architecture'
         if: ${{ matrix.arch != 'amd64' }}
         run: |
@@ -108,12 +108,15 @@ jobs:
       - name: 'install mbedTLS from source'
         if: ${{ matrix.crypto == 'mbedTLS' }}
         run: |
-          MBEDTLSVER=mbedtls-3.4.1
+          MBEDTLSVER=mbedtls-3.5.0
           curl -L https://github.com/Mbed-TLS/mbedtls/archive/$MBEDTLSVER.tar.gz | tar -xzf -
           cd mbedtls-$MBEDTLSVER
-          [ '${{ matrix.arch }}' = 'i386' ] && crossoptions='-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_VERSION=1 -DCMAKE_SYSTEM_PROCESSOR=${{ matrix.arch }} -DCMAKE_C_FLAGS=-m32'
-          cmake --version
+          if [ '${{ matrix.arch }}' = 'i386' ]; then
+            crossoptions='-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_VERSION=1 -DCMAKE_SYSTEM_PROCESSOR=${{ matrix.arch }}'
+            cflags='-m32 -mpclmul -msse2 -maes'
+          fi
           cmake ${crossoptions} \
+            "-DCMAKE_C_FLAGS=${cflags}" \
             -DUSE_SHARED_MBEDTLS_LIBRARY=ON \
             -DCMAKE_INSTALL_PREFIX:PATH=../usr
           make -j3 install
@@ -149,7 +152,6 @@ jobs:
         if: ${{ matrix.build == 'cmake' }}
         run: |
           [ '${{ matrix.arch }}' = 'i386' ] && crossoptions='-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_VERSION=1 -DCMAKE_SYSTEM_PROCESSOR=${{ matrix.arch }} -DCMAKE_C_FLAGS=-m32'
-          cmake --version
           cmake -B bld ${crossoptions} $TOOLCHAIN_OPTION \
             -DENABLE_WERROR=ON \
             -DCRYPTO_BACKEND=${{ matrix.crypto }} \
@@ -165,6 +167,42 @@ jobs:
           export OPENSSH_SERVER_IMAGE=ghcr.io/libssh2/ci_tests_openssh_server:$(git rev-parse --short=20 HEAD:tests/openssh_server)
           cd bld && ctest -VV --output-on-failure
 
+  build_linux_cross_mingw64:
+    name: 'linux -> mingw-w64'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        build: [autotools, cmake]
+    env:
+      TRIPLET: 'x86_64-w64-mingw32'
+    steps:
+      - uses: actions/checkout@v4
+      - name: 'install packages'
+        run: sudo apt-get --quiet 2 --option Dpkg::Use-Pty=0 install mingw-w64
+      - name: 'autotools autoreconf'
+        if: ${{ matrix.build == 'autotools' }}
+        run: autoreconf -fi
+      - name: 'autotools configure'
+        if: ${{ matrix.build == 'autotools' }}
+        run: mkdir bld && cd bld && ../configure --enable-werror --enable-debug --host=${TRIPLET}
+      - name: 'autotools build'
+        if: ${{ matrix.build == 'autotools' }}
+        run: make -C bld -j3
+      - name: 'cmake configure'
+        if: ${{ matrix.build == 'cmake' }}
+        run: |
+          cmake -B bld \
+            -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_C_COMPILER_TARGET=${TRIPLET} \
+            -DCMAKE_C_COMPILER=${TRIPLET}-gcc \
+            -DENABLE_WERROR=ON
+
+      - name: 'cmake build'
+        if: ${{ matrix.build == 'cmake' }}
+        run: cmake --build bld --parallel 3
+
   build_cygwin:
     name: 'cygwin'
     runs-on: windows-latest
@@ -179,7 +217,7 @@ jobs:
       fail-fast: false
     steps:
       - run: git config --global core.autocrlf input
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: cygwin/cygwin-install-action@v4
         with:
           platform: ${{ matrix.platform }}
@@ -205,7 +243,6 @@ jobs:
         shell: C:\cygwin\bin\bash.exe '{0}'
         run: |
           export PATH="/usr/bin:$(cygpath ${SYSTEMROOT})/system32"
-          cmake --version
           cmake -B bld \
             -DENABLE_WERROR=ON \
             -DENABLE_DEBUG_LOGGING=ON \
@@ -236,7 +273,7 @@ jobs:
           - { build: 'make'     , sys: mingw64, env: x86_64 }
       fail-fast: false
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: msys2/setup-msys2@v2
         if: ${{ matrix.sys == 'msys' }}
         with:
@@ -298,7 +335,6 @@ jobs:
             cflags=''
             rcopts=''
           fi
-          cmake --version
           cmake -B bld ${options} \
             "-DCMAKE_C_FLAGS=${cflags}" \
             "-DCMAKE_RC_COMPILE_OBJECT=${rcopts}" \
@@ -345,7 +381,7 @@ jobs:
           - { arch: x86  , plat: windows, crypto: WinCNG , log: 'OFF', shared: 'ON' , zlib: 'OFF', unity: 'OFF' }
       fail-fast: false
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: 'cmake configure'
         shell: bash
         run: |
@@ -356,7 +392,6 @@ jobs:
           else
             system='Windows'
           fi
-          cmake --version
           cmake -B bld ${options} \
             -DCMAKE_SYSTEM_NAME=${system} \
             -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake \
@@ -412,11 +447,11 @@ jobs:
           - name: 'mbedTLS'
             install: mbedtls
             configure: --with-crypto=mbedtls --with-libmbedcrypto-prefix=/usr/local/opt/mbedtls
-            cmake: -DCRYPTO_BACKEND=mbedTLS -DMBEDCRYPTO_LIBRARY=/usr/local/opt/mbedtls/lib/libmbedcrypto.a -DMBEDTLS_LIBRARY=/usr/local/opt/mbedtls/lib/libmbedtls.a -DMBEDX509_LIBRARY=/usr/local/opt/mbedtls/lib/libmbedx509.a -DMBEDTLS_INCLUDE_DIR=/usr/local/opt/mbedtls/include
+            cmake: -DCRYPTO_BACKEND=mbedTLS -DMBEDTLS_INCLUDE_DIR=/usr/local/opt/mbedtls/include -DMBEDCRYPTO_LIBRARY=/usr/local/opt/mbedtls/lib/libmbedcrypto.a
     steps:
       - name: 'install packages'
         run: brew install automake ${{ matrix.crypto.install }}
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: 'autotools autoreconf'
         if: ${{ matrix.build == 'autotools' }}
         run: autoreconf -fi
@@ -438,7 +473,6 @@ jobs:
       - name: 'cmake configure'
         if: ${{ matrix.build == 'cmake' }}
         run: |
-          cmake --version
           cmake -B bld ${{ matrix.crypto.cmake }} \
             -DCMAKE_UNITY_BUILD=ON \
             -DENABLE_WERROR=ON \
