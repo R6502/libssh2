@@ -55,6 +55,7 @@
 /* Helper macro called from
    kex_method_diffie_hellman_group1_sha1_key_exchange */
 
+#if LIBSSH2_ECDSA
 #define LIBSSH2_KEX_METHOD_EC_SHA_VALUE_HASH(value, reqlen, version)        \
     do {                                                                    \
         if(type == LIBSSH2_EC_CURVE_NISTP256) {                             \
@@ -67,6 +68,7 @@
             LIBSSH2_KEX_METHOD_SHA_VALUE_HASH(512, value, reqlen, version); \
         }                                                                   \
     } while(0)
+#endif
 
 #define LIBSSH2_KEX_METHOD_SHA_VALUE_HASH(digest_type, value,               \
                                           reqlen, version)                  \
@@ -300,8 +302,8 @@ static int diffie_hellman_sha_algo(LIBSSH2_SESSION *session,
                                exchange_state->e_packet + 6);
         }
 
-        _libssh2_debug((session, LIBSSH2_TRACE_KEX, "Sending KEX packet %d",
-                       (int) packet_type_init));
+        _libssh2_debug((session, LIBSSH2_TRACE_KEX, "Sending KEX packet %u",
+                       (unsigned int) packet_type_init));
         exchange_state->state = libssh2_NB_state_created;
     }
 
@@ -1568,6 +1570,7 @@ dh_gex_clean_exit:
     return ret;
 }
 
+#if LIBSSH2_ECDSA
 
 /* LIBSSH2_KEX_METHOD_EC_SHA_HASH_CREATE_VERIFY
  *
@@ -1585,7 +1588,6 @@ dh_gex_clean_exit:
  * mpint    K,   shared secret
  *
  */
-
 #define LIBSSH2_KEX_METHOD_EC_SHA_HASH_CREATE_VERIFY(digest_type)            \
 do {                                                                         \
     libssh2_sha##digest_type##_ctx ctx;                                      \
@@ -1676,9 +1678,6 @@ do {                                                                         \
         rc = -1;                                                             \
     }                                                                        \
 } while(0)
-
-
-#if LIBSSH2_ECDSA
 
 /* kex_session_ecdh_curve_type
  * returns the EC curve type by name used in key exchange
@@ -3033,6 +3032,13 @@ kex_method_extension_negotiation = {
     0,
 };
 
+static const LIBSSH2_KEX_METHOD
+kex_method_strict_client_extension = {
+    "kex-strict-c-v00@openssh.com",
+    NULL,
+    0,
+};
+
 static const LIBSSH2_KEX_METHOD *libssh2_kex_methods[] = {
 #if LIBSSH2_ED25519
     &kex_method_ssh_curve25519_sha256,
@@ -3051,6 +3057,7 @@ static const LIBSSH2_KEX_METHOD *libssh2_kex_methods[] = {
     &kex_method_diffie_helman_group1_sha1,
     &kex_method_diffie_helman_group_exchange_sha1,
     &kex_method_extension_negotiation,
+    &kex_method_strict_client_extension,
     NULL
 };
 
@@ -3303,13 +3310,13 @@ static int kexinit(LIBSSH2_SESSION * session)
     return 0;
 }
 
-/* kex_agree_instr
+/* _libssh2_kex_agree_instr
  * Kex specific variant of strstr()
  * Needle must be preceded by BOL or ',', and followed by ',' or EOL
  */
-static unsigned char *
-kex_agree_instr(unsigned char *haystack, size_t haystack_len,
-                const unsigned char *needle, size_t needle_len)
+unsigned char *
+_libssh2_kex_agree_instr(unsigned char *haystack, size_t haystack_len,
+                         const unsigned char *needle, size_t needle_len)
 {
     unsigned char *s;
     unsigned char *end_haystack;
@@ -3394,7 +3401,7 @@ static int kex_agree_hostkey(LIBSSH2_SESSION * session,
         while(s && *s) {
             unsigned char *p = (unsigned char *) strchr((char *) s, ',');
             size_t method_len = (p ? (size_t)(p - s) : strlen((char *) s));
-            if(kex_agree_instr(hostkey, hostkey_len, s, method_len)) {
+            if(_libssh2_kex_agree_instr(hostkey, hostkey_len, s, method_len)) {
                 const LIBSSH2_HOSTKEY_METHOD *method =
                     (const LIBSSH2_HOSTKEY_METHOD *)
                     kex_get_method_by_name((char *) s, method_len,
@@ -3428,9 +3435,9 @@ static int kex_agree_hostkey(LIBSSH2_SESSION * session,
     }
 
     while(hostkeyp && (*hostkeyp) && (*hostkeyp)->name) {
-        s = kex_agree_instr(hostkey, hostkey_len,
-                            (unsigned char *) (*hostkeyp)->name,
-                            strlen((*hostkeyp)->name));
+        s = _libssh2_kex_agree_instr(hostkey, hostkey_len,
+                                     (unsigned char *) (*hostkeyp)->name,
+                                     strlen((*hostkeyp)->name));
         if(s) {
             /* So far so good, but does it suit our purposes? (Encrypting vs
                Signing) */
@@ -3464,6 +3471,12 @@ static int kex_agree_kex_hostkey(LIBSSH2_SESSION * session, unsigned char *kex,
 {
     const LIBSSH2_KEX_METHOD **kexp = libssh2_kex_methods;
     unsigned char *s;
+    const unsigned char *strict =
+        (unsigned char *)"kex-strict-s-v00@openssh.com";
+
+    if(_libssh2_kex_agree_instr(kex, kex_len, strict, 28)) {
+        session->kex_strict = 1;
+    }
 
     if(session->kex_prefs) {
         s = (unsigned char *) session->kex_prefs;
@@ -3471,7 +3484,7 @@ static int kex_agree_kex_hostkey(LIBSSH2_SESSION * session, unsigned char *kex,
         while(s && *s) {
             unsigned char *q, *p = (unsigned char *) strchr((char *) s, ',');
             size_t method_len = (p ? (size_t)(p - s) : strlen((char *) s));
-            q = kex_agree_instr(kex, kex_len, s, method_len);
+            q = _libssh2_kex_agree_instr(kex, kex_len, s, method_len);
             if(q) {
                 const LIBSSH2_KEX_METHOD *method = (const LIBSSH2_KEX_METHOD *)
                     kex_get_method_by_name((char *) s, method_len,
@@ -3505,9 +3518,9 @@ static int kex_agree_kex_hostkey(LIBSSH2_SESSION * session, unsigned char *kex,
     }
 
     while(*kexp && (*kexp)->name) {
-        s = kex_agree_instr(kex, kex_len,
-                            (unsigned char *) (*kexp)->name,
-                            strlen((*kexp)->name));
+        s = _libssh2_kex_agree_instr(kex, kex_len,
+                                     (unsigned char *) (*kexp)->name,
+                                     strlen((*kexp)->name));
         if(s) {
             /* We've agreed on a key exchange method,
              * Can we agree on a hostkey that works with this kex?
@@ -3551,7 +3564,7 @@ static int kex_agree_crypt(LIBSSH2_SESSION * session,
             unsigned char *p = (unsigned char *) strchr((char *) s, ',');
             size_t method_len = (p ? (size_t)(p - s) : strlen((char *) s));
 
-            if(kex_agree_instr(crypt, crypt_len, s, method_len)) {
+            if(_libssh2_kex_agree_instr(crypt, crypt_len, s, method_len)) {
                 const LIBSSH2_CRYPT_METHOD *method =
                     (const LIBSSH2_CRYPT_METHOD *)
                     kex_get_method_by_name((char *) s, method_len,
@@ -3573,9 +3586,9 @@ static int kex_agree_crypt(LIBSSH2_SESSION * session,
     }
 
     while(*cryptp && (*cryptp)->name) {
-        s = kex_agree_instr(crypt, crypt_len,
-                            (unsigned char *) (*cryptp)->name,
-                            strlen((*cryptp)->name));
+        s = _libssh2_kex_agree_instr(crypt, crypt_len,
+                                     (unsigned char *) (*cryptp)->name,
+                                     strlen((*cryptp)->name));
         if(s) {
             endpoint->crypt = *cryptp;
             return 0;
@@ -3615,7 +3628,7 @@ static int kex_agree_mac(LIBSSH2_SESSION * session,
             unsigned char *p = (unsigned char *) strchr((char *) s, ',');
             size_t method_len = (p ? (size_t)(p - s) : strlen((char *) s));
 
-            if(kex_agree_instr(mac, mac_len, s, method_len)) {
+            if(_libssh2_kex_agree_instr(mac, mac_len, s, method_len)) {
                 const LIBSSH2_MAC_METHOD *method = (const LIBSSH2_MAC_METHOD *)
                     kex_get_method_by_name((char *) s, method_len,
                                            (const LIBSSH2_COMMON_METHOD **)
@@ -3636,8 +3649,9 @@ static int kex_agree_mac(LIBSSH2_SESSION * session,
     }
 
     while(*macp && (*macp)->name) {
-        s = kex_agree_instr(mac, mac_len, (unsigned char *) (*macp)->name,
-                            strlen((*macp)->name));
+        s = _libssh2_kex_agree_instr(mac, mac_len,
+                                     (unsigned char *) (*macp)->name,
+                                     strlen((*macp)->name));
         if(s) {
             endpoint->mac = *macp;
             return 0;
@@ -3668,7 +3682,7 @@ static int kex_agree_comp(LIBSSH2_SESSION *session,
             unsigned char *p = (unsigned char *) strchr((char *) s, ',');
             size_t method_len = (p ? (size_t)(p - s) : strlen((char *) s));
 
-            if(kex_agree_instr(comp, comp_len, s, method_len)) {
+            if(_libssh2_kex_agree_instr(comp, comp_len, s, method_len)) {
                 const LIBSSH2_COMP_METHOD *method =
                     (const LIBSSH2_COMP_METHOD *)
                     kex_get_method_by_name((char *) s, method_len,
@@ -3690,8 +3704,9 @@ static int kex_agree_comp(LIBSSH2_SESSION *session,
     }
 
     while(*compp && (*compp)->name) {
-        s = kex_agree_instr(comp, comp_len, (unsigned char *) (*compp)->name,
-                            strlen((*compp)->name));
+        s = _libssh2_kex_agree_instr(comp, comp_len,
+                                     (unsigned char *) (*compp)->name,
+                                     strlen((*compp)->name));
         if(s) {
             endpoint->comp = *compp;
             return 0;
@@ -3872,6 +3887,7 @@ _libssh2_kex_exchange(LIBSSH2_SESSION * session, int reexchange,
                 session->local.kexinit = key_state->oldlocal;
                 session->local.kexinit_len = key_state->oldlocal_len;
                 key_state->state = libssh2_NB_state_idle;
+                session->state &= ~LIBSSH2_STATE_INITIAL_KEX;
                 session->state &= ~LIBSSH2_STATE_KEX_ACTIVE;
                 session->state &= ~LIBSSH2_STATE_EXCHANGING_KEYS;
                 return -1;
@@ -3897,6 +3913,7 @@ _libssh2_kex_exchange(LIBSSH2_SESSION * session, int reexchange,
                 session->local.kexinit = key_state->oldlocal;
                 session->local.kexinit_len = key_state->oldlocal_len;
                 key_state->state = libssh2_NB_state_idle;
+                session->state &= ~LIBSSH2_STATE_INITIAL_KEX;
                 session->state &= ~LIBSSH2_STATE_KEX_ACTIVE;
                 session->state &= ~LIBSSH2_STATE_EXCHANGING_KEYS;
                 return -1;
@@ -3945,6 +3962,7 @@ _libssh2_kex_exchange(LIBSSH2_SESSION * session, int reexchange,
         session->remote.kexinit = NULL;
     }
 
+    session->state &= ~LIBSSH2_STATE_INITIAL_KEX;
     session->state &= ~LIBSSH2_STATE_KEX_ACTIVE;
     session->state &= ~LIBSSH2_STATE_EXCHANGING_KEYS;
 

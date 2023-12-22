@@ -3,9 +3,7 @@
 AUTOMAKE_OPTIONS = foreign nostdinc
 
 SUBDIRS = src docs
-if ENABLE_TESTS
 SUBDIRS += tests
-endif
 if BUILD_EXAMPLES
 SUBDIRS += example
 endif
@@ -40,7 +38,7 @@ OS400FILES = os400/README400 os400/initscript.sh os400/make.sh \
 EXTRA_DIST = $(WIN32FILES) get_ver.awk \
   maketgz RELEASE-NOTES libssh2.pc.in $(VMSFILES) config.rpath \
   CMakeLists.txt cmake git2news.pl libssh2-style.el README.md $(OS400FILES) \
-  buildconf Makefile.mk
+  buildconf
 
 ACLOCAL_AMFLAGS = -I m4
 
@@ -64,8 +62,8 @@ init-coverage:
 	make clean
 	lcov --directory . --zerocounters
 
-COVERAGE_CCOPTS ?= "-g --coverage"
-COVERAGE_OUT ?= docs/coverage
+COVERAGE_CCOPTS := "-g --coverage"
+COVERAGE_OUT := docs/coverage
 
 build-coverage:
 	make CFLAGS=$(COVERAGE_CCOPTS) check

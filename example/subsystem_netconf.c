@@ -47,7 +47,7 @@ static int netconf_write(LIBSSH2_CHANNEL *channel, const char *buf, size_t len)
     do {
         i = libssh2_channel_write(channel, buf, len);
         if(i < 0) {
-            fprintf(stderr, "libssh2_channel_write: %d\n", (int)i);
+            fprintf(stderr, "libssh2_channel_write: %ld\n", (long)i);
             return -1;
         }
         wr += i;
@@ -70,10 +70,10 @@ static ssize_t netconf_read_until(LIBSSH2_CHANNEL *channel, const char *endtag,
         if(LIBSSH2_ERROR_EAGAIN == len)
             continue;
         else if(len < 0) {
-            fprintf(stderr, "libssh2_channel_read: %d\n", (int)len);
+            fprintf(stderr, "libssh2_channel_read: %ld\n", (long)len);
             return -1;
         }
-        rd += len;
+        rd += (size_t)len;
 
         /* read more data until we see a rpc-reply closing tag followed by
          * the special sequence ]]>]]> */
@@ -93,10 +93,10 @@ static ssize_t netconf_read_until(LIBSSH2_CHANNEL *channel, const char *endtag,
     }
 
     /* discard the special sequence so that only XML is returned */
-    rd = specialsequence - buf;
+    rd = (size_t)(specialsequence - buf);
     buf[rd] = 0;
 
-    return rd;
+    return (ssize_t)rd;
 }
 
 int main(int argc, char *argv[])
@@ -242,15 +242,17 @@ int main(int argc, char *argv[])
     /* NETCONF: https://tools.ietf.org/html/draft-ietf-netconf-ssh-06 */
 
     fprintf(stderr, "Sending NETCONF client <hello>\n");
-    snprintf(buf, sizeof(buf),
-      "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-      "<hello>"
-      "<capabilities>"
-      "<capability>urn:ietf:params:xml:ns:netconf:base:1.0</capability>"
-      "</capabilities>"
-      "</hello>\n"
-      "]]>]]>\n%n", (int *)&len);
-    if(-1 == netconf_write(channel, buf, len))
+    len = snprintf(buf, sizeof(buf),
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        "<hello>"
+        "<capabilities>"
+        "<capability>urn:ietf:params:xml:ns:netconf:base:1.0</capability>"
+        "</capabilities>"
+        "</hello>\n"
+        "]]>]]>\n");
+    if(len < 0)
+        goto shutdown;
+    if(-1 == netconf_write(channel, buf, (size_t)len))
         goto shutdown;
 
     fprintf(stderr, "Reading NETCONF server <hello>\n");
@@ -258,17 +260,19 @@ int main(int argc, char *argv[])
     if(-1 == len)
         goto shutdown;
 
-    fprintf(stderr, "Got %d bytes:\n----------------------\n%s",
-            (int)len, buf);
+    fprintf(stderr, "Got %ld bytes:\n----------------------\n%s",
+            (long)len, buf);
 
     fprintf(stderr, "Sending NETCONF <rpc>\n");
-    snprintf(buf, sizeof(buf),
-      "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-      "<rpc xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">"
-      "<get-interface-information><terse/></get-interface-information>"
-      "</rpc>\n"
-      "]]>]]>\n%n", (int *)&len);
-    if(-1 == netconf_write(channel, buf, len))
+    len = snprintf(buf, sizeof(buf),
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        "<rpc xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">"
+        "<get-interface-information><terse/></get-interface-information>"
+        "</rpc>\n"
+        "]]>]]>\n");
+    if(len < 0)
+        goto shutdown;
+    if(-1 == netconf_write(channel, buf, (size_t)len))
         goto shutdown;
 
     fprintf(stderr, "Reading NETCONF <rpc-reply>\n");
@@ -276,8 +280,8 @@ int main(int argc, char *argv[])
     if(-1 == len)
         goto shutdown;
 
-    fprintf(stderr, "Got %d bytes:\n----------------------\n%s",
-            (int)len, buf);
+    fprintf(stderr, "Got %ld bytes:\n----------------------\n%s",
+            (long)len, buf);
 
 shutdown:
 
@@ -291,14 +295,14 @@ shutdown:
 
     if(sock != LIBSSH2_INVALID_SOCKET) {
         shutdown(sock, 2);
-#ifdef _WIN32
-        closesocket(sock);
-#else
-        close(sock);
-#endif
+        LIBSSH2_SOCKET_CLOSE(sock);
     }
 
     libssh2_exit();
+
+#ifdef _WIN32
+    WSACleanup();
+#endif
 
     return 0;
 }

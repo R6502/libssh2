@@ -176,6 +176,10 @@ else
   enable_clear_memory=yes
 fi
 
+LIBSSH2_CFLAG_EXTRAS=""
+
+LIBSSH2_CHECK_OPTION_WERROR
+
 dnl ************************************************************
 dnl option to switch on compiler debug options
 dnl
@@ -203,6 +207,8 @@ AS_HELP_STRING([--disable-debug],[Disable debug options]),
        AC_MSG_RESULT(no)
 )
 
+AC_SUBST(LIBSSH2_CFLAG_EXTRAS)
+
 dnl ************************************************************
 dnl Enable hiding of internal symbols in library to reduce its size and
 dnl speed dynamic linking of applications.  This currently is only supported
@@ -211,7 +217,7 @@ dnl
 AC_MSG_CHECKING([whether to enable hidden symbols in the library])
 AC_ARG_ENABLE(hidden-symbols,
 AS_HELP_STRING([--enable-hidden-symbols],[Hide internal symbols in library])
-AS_HELP_STRING([--disable-hidden-symbols],[Leave all symbols with default visibility in library]),
+AS_HELP_STRING([--disable-hidden-symbols],[Leave all symbols with default visibility in library (default)]),
 [ case "$enableval" in
   no)
        AC_MSG_RESULT(no)
@@ -242,16 +248,16 @@ AS_HELP_STRING([--disable-hidden-symbols],[Leave all symbols with default visibi
        AC_MSG_RESULT(no)
 )
 
-# Build tests?
-AC_ARG_ENABLE([tests],
-  [AS_HELP_STRING([--disable-tests], [Disable tests @<:@default=enabled@:>@])],
-  [
-    if ! test "x${enable_tests}" = "xyes"; then
-      enable_tests="no"
-    fi
-  ],
-  [enable_tests="yes"])
-AM_CONDITIONAL([ENABLE_TESTS], [test "x$enable_tests" = xyes])
+dnl Build without deprecated APIs?
+AC_ARG_ENABLE([deprecated],
+  [AS_HELP_STRING([--disable-deprecated], [Build without deprecated APIs @<:@default=no@:>@])],
+  [case "$enableval" in
+    *)
+      with_deprecated="no"
+      CPPFLAGS="$CPPFLAGS -DLIBSSH2_NO_DEPRECATED"
+      ;;
+  esac],
+  [with_deprecated="yes"])
 
 # Run Docker tests?
 AC_ARG_ENABLE([docker-tests],
@@ -376,7 +382,6 @@ AM_CONDITIONAL([HAVE_WINDRES],
 AM_CONDITIONAL([HAVE_LIB_STATIC], [test "x$enable_static" != "xno"])
 
 # Configure parameters
-LIBSSH2_CHECK_OPTION_WERROR
 
 # Append crypto lib
 if   test "$found_crypto" = "openssl"; then
@@ -427,6 +432,7 @@ AC_MSG_NOTICE([summary of build options:
   Crypto library:   ${found_crypto_str}
   zlib compression: ${found_libz}
   Clear memory:     $enable_clear_memory
+  Deprecated APIs:  $with_deprecated
   Debug build:      $enable_debug
   Build examples:   $build_examples
   Run Docker tests: $run_docker_tests

@@ -257,7 +257,7 @@ int main(int argc, char *argv[])
         }
         if(nread > 0) {
             total += nread;
-            write(1, mem, nread);
+            write(1, mem, (size_t)nread);
         }
         else {
             break;
@@ -288,16 +288,16 @@ shutdown:
 
     if(sock != LIBSSH2_INVALID_SOCKET) {
         shutdown(sock, 2);
-#ifdef _WIN32
-        closesocket(sock);
-#else
-        close(sock);
-#endif
+        LIBSSH2_SOCKET_CLOSE(sock);
     }
 
     fprintf(stderr, "all done\n");
 
     libssh2_exit();
+
+#ifdef _WIN32
+    WSACleanup();
+#endif
 
     return 0;
 }

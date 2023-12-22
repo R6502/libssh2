@@ -403,7 +403,7 @@ static int read_file(const char *path, char **out_buffer, size_t *out_len)
 {
     FILE *fp;
     char *buffer;
-    size_t len;
+    ssize_t len;
 
     if(!out_buffer || !out_len || !path) {
         fprintf(stderr, "invalid params.\n");
@@ -422,16 +422,21 @@ static int read_file(const char *path, char **out_buffer, size_t *out_len)
 
     fseek(fp, 0L, SEEK_END);
     len = ftell(fp);
+    if(len < 0) {
+        fclose(fp);
+        fprintf(stderr, "Could not determine input size of: %s\n", path);
+        return 1;
+    }
     rewind(fp);
 
-    buffer = calloc(1, len + 1);
+    buffer = calloc(1, (size_t)len + 1);
     if(!buffer) {
         fclose(fp);
         fprintf(stderr, "Could not alloc memory.\n");
         return 1;
     }
 
-    if(1 != fread(buffer, len, 1, fp)) {
+    if(1 != fread(buffer, (size_t)len, 1, fp)) {
         fclose(fp);
         free(buffer);
         fprintf(stderr, "Could not read file into memory.\n");
@@ -441,7 +446,7 @@ static int read_file(const char *path, char **out_buffer, size_t *out_len)
     fclose(fp);
 
     *out_buffer = buffer;
-    *out_len = len;
+    *out_len = (size_t)len;
 
     return 0;
 }
@@ -458,10 +463,13 @@ int test_auth_pubkey(LIBSSH2_SESSION *session, int flags,
     /* Ignore our hard-wired Dockerfile user when not running under Docker */
     if(!openssh_fixture_have_docker() && strcmp(username, "libssh2") == 0) {
         username = getenv("USER");
+        if(!username) {
 #ifdef _WIN32
-        if(!username)
             username = getenv("USERNAME");
+#else
+            username = getenv("LOGNAME");
 #endif
+        }
     }
 
     userauth_list = libssh2_userauth_list(session, username,

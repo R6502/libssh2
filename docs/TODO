@@ -1,6 +1,8 @@
 Things TODO
 ===========
 
+* Fix -Wsign-conversion warnings in src
+
 * Fix the numerous malloc+copy operations for sending data, see "Buffering
   Improvements" below for details
 
@@ -23,14 +25,18 @@ Things TODO
 * select() is troublesome with libssh2 when using multiple channels over
   the same session. See "New Transport API" below for more details.
 
+* for obsolete/weak/insecure algorithms: either stop enabling them by default
+  at build-time, or delete support for them completely.
+
 At next SONAME bump
 ===================
 
 * stop using #defined macros as part of the official API. The macros should
   either be turned into real functions or discarded from the API.
 
-* fix the parts of the API where object pointers and function pointers are
-  mixed like libssh2_session_callback_set()
+* delete or deprecate libssh2_session_callback_set()
+
+* bump length arguments in callback functions to size_t/ssize_t
 
 * remove the following functions from the API/ABI
 
@@ -145,7 +151,7 @@ API
  New functions:
 
     LIBSSH2_SFTP_HANDLE *libssh2_sftp_send(SFTP_SESSION *sftp,
-                                           uint64_t filesize,
+                                           libssh2_uint64_t filesize,
                                            char *remote_path,
                                            size_t remote_path_len,
                                            long mode);

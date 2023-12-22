@@ -126,7 +126,7 @@ packet_queue_listener(LIBSSH2_SESSION * session, unsigned char *data,
         }
 
         _libssh2_debug((session, LIBSSH2_TRACE_CONN,
-                       "Remote received connection from %s:%ld to %s:%ld",
+                       "Remote received connection from %s:%u to %s:%u",
                        listen_state->shost, listen_state->sport,
                        listen_state->host, listen_state->port));
 
@@ -137,8 +137,8 @@ packet_queue_listener(LIBSSH2_SESSION * session, unsigned char *data,
         while(listn) {
             if((listn->port == (int) listen_state->port) &&
                 (strlen(listn->host) == listen_state->host_len) &&
-                (memcmp (listn->host, listen_state->host,
-                         listen_state->host_len) == 0)) {
+                (memcmp(listn->host, listen_state->host,
+                        listen_state->host_len) == 0)) {
                 /* This is our listener */
                 LIBSSH2_CHANNEL *channel = NULL;
                 listen_state->channel = NULL;
@@ -199,8 +199,8 @@ packet_queue_listener(LIBSSH2_SESSION * session, unsigned char *data,
                     channel->local.packet_size = listen_state->packet_size;
 
                     _libssh2_debug((session, LIBSSH2_TRACE_CONN,
-                                   "Connection queued: channel %lu/%lu "
-                                   "win %lu/%lu packet %lu/%lu",
+                                   "Connection queued: channel %u/%u "
+                                   "win %u/%u packet %u/%u",
                                    channel->local.id, channel->remote.id,
                                    channel->local.window_size,
                                    channel->remote.window_size,
@@ -339,7 +339,7 @@ packet_x11_open(LIBSSH2_SESSION * session, unsigned char *data,
         }
 
         _libssh2_debug((session, LIBSSH2_TRACE_CONN,
-                       "X11 Connection Received from %s:%ld on channel %lu",
+                       "X11 Connection Received from %s:%u on channel %u",
                        x11open_state->shost, x11open_state->sport,
                        x11open_state->sender_channel));
 
@@ -384,8 +384,8 @@ packet_x11_open(LIBSSH2_SESSION * session, unsigned char *data,
             channel->local.packet_size = x11open_state->packet_size;
 
             _libssh2_debug((session, LIBSSH2_TRACE_CONN,
-                           "X11 Connection established: channel %lu/%lu "
-                           "win %lu/%lu packet %lu/%lu",
+                           "X11 Connection established: channel %u/%u "
+                           "win %u/%u packet %u/%u",
                            channel->local.id, channel->remote.id,
                            channel->local.window_size,
                            channel->remote.window_size,
@@ -497,7 +497,7 @@ packet_authagent_open(LIBSSH2_SESSION * session,
         }
 
         _libssh2_debug((session, LIBSSH2_TRACE_CONN,
-                       "Auth Agent Connection Received on channel %lu",
+                       "Auth Agent Connection Received on channel %u",
                        authagent_state->sender_channel));
 
         authagent_state->state = libssh2_NB_state_allocated;
@@ -545,7 +545,7 @@ packet_authagent_open(LIBSSH2_SESSION * session,
 
             _libssh2_debug((session, LIBSSH2_TRACE_CONN,
                            "Auth Agent Connection established: channel "
-                           "%lu/%lu win %lu/%lu packet %lu/%lu",
+                           "%u/%u win %u/%u packet %u/%u",
                            channel->local.id, channel->remote.id,
                            channel->local.window_size,
                            channel->remote.window_size,
@@ -624,14 +624,13 @@ authagent_exit:
  * layer when it has received a packet.
  *
  * The input pointer 'data' is pointing to allocated data that this function
- * is asked to deal with so on failure OR success, it must be freed fine.
- * The only exception is when the return code is LIBSSH2_ERROR_EAGAIN.
+ * will be freed unless return the code is LIBSSH2_ERROR_EAGAIN.
  *
  * This function will always be called with 'datalen' greater than zero.
  */
 int
 _libssh2_packet_add(LIBSSH2_SESSION * session, unsigned char *data,
-                    size_t datalen, int macstate)
+                    size_t datalen, int macstate, uint32_t seq)
 {
     int rc = 0;
     unsigned char *message = NULL;
@@ -645,8 +644,8 @@ _libssh2_packet_add(LIBSSH2_SESSION * session, unsigned char *data,
     switch(session->packAdd_state) {
     case libssh2_NB_state_idle:
         _libssh2_debug((session, LIBSSH2_TRACE_TRANS,
-                       "Packet type %d received, length=%d",
-                       (int) msg, (int) datalen));
+                       "Packet type %u received, length=%ld",
+                       (unsigned int) msg, (long) datalen));
 
         if((macstate == LIBSSH2_MAC_INVALID) &&
             (!session->macerror ||
@@ -674,6 +673,70 @@ _libssh2_packet_add(LIBSSH2_SESSION * session, unsigned char *data,
         goto libssh2_packet_add_jump_authagent;
     default: /* nothing to do */
         break;
+    }
+
+    if(session->state & LIBSSH2_STATE_INITIAL_KEX) {
+        if(msg == SSH_MSG_KEXINIT) {
+            if(!session->kex_strict) {
+                if(datalen < 17) {
+                    LIBSSH2_FREE(session, data);
+                    session->packAdd_state = libssh2_NB_state_idle;
+                    return _libssh2_error(session,
+                                          LIBSSH2_ERROR_BUFFER_TOO_SMALL,
+                                          "Data too short extracting kex");
+                }
+                else {
+                    const unsigned char *strict =
+                    (unsigned char *)"kex-strict-s-v00@openssh.com";
+                    struct string_buf buf;
+                    unsigned char *algs = NULL;
+                    size_t algs_len = 0;
+
+                    buf.data = (unsigned char *)data;
+                    buf.dataptr = buf.data;
+                    buf.len = datalen;
+                    buf.dataptr += 17; /* advance past type and cookie */
+
+                    if(_libssh2_get_string(&buf, &algs, &algs_len)) {
+                        LIBSSH2_FREE(session, data);
+                        session->packAdd_state = libssh2_NB_state_idle;
+                        return _libssh2_error(session,
+                                              LIBSSH2_ERROR_BUFFER_TOO_SMALL,
+                                              "Algs too short");
+                    }
+
+                    if(algs_len == 0 ||
+                       _libssh2_kex_agree_instr(algs, algs_len, strict, 28)) {
+                        session->kex_strict = 1;
+                    }
+                }
+            }
+
+            if(session->kex_strict && seq) {
+                LIBSSH2_FREE(session, data);
+                session->socket_state = LIBSSH2_SOCKET_DISCONNECTED;
+                session->packAdd_state = libssh2_NB_state_idle;
+                libssh2_session_disconnect(session, "strict KEX violation: "
+                                           "KEXINIT was not the first packet");
+
+                return _libssh2_error(session, LIBSSH2_ERROR_SOCKET_DISCONNECT,
+                                      "strict KEX violation: "
+                                      "KEXINIT was not the first packet");
+            }
+        }
+
+        if(session->kex_strict && session->fullpacket_required_type &&
+            session->fullpacket_required_type != msg) {
+            LIBSSH2_FREE(session, data);
+            session->socket_state = LIBSSH2_SOCKET_DISCONNECTED;
+            session->packAdd_state = libssh2_NB_state_idle;
+            libssh2_session_disconnect(session, "strict KEX violation: "
+                                       "unexpected packet type");
+
+            return _libssh2_error(session, LIBSSH2_ERROR_SOCKET_DISCONNECT,
+                                  "strict KEX violation: "
+                                  "unexpected packet type");
+        }
     }
 
     if(session->packAdd_state == libssh2_NB_state_allocated) {
@@ -812,7 +875,8 @@ _libssh2_packet_add(LIBSSH2_SESSION * session, unsigned char *data,
                         _libssh2_debug((session,
                                        LIBSSH2_TRACE_KEX,
                                        "Server to Client extension %.*s: %.*s",
-                                       name_len, name, value_len, value));
+                                       (int)name_len, name,
+                                       (int)value_len, value));
                     }
 
                     if(name_len == 15 &&
@@ -860,7 +924,7 @@ _libssh2_packet_add(LIBSSH2_SESSION * session, unsigned char *data,
                     _libssh2_debug((session,
                                    LIBSSH2_TRACE_CONN,
                                    "Received global request type %.*s (wr %X)",
-                                   len, data + 5, want_reply));
+                                   (int)len, data + 5, want_reply));
                 }
 
 
@@ -889,7 +953,7 @@ libssh2_packet_add_jump_point5:
             /* streamid(4) */
             data_head += 4;
 
-            /* fall-through */
+            LIBSSH2_FALLTHROUGH();
 
             /*
               byte      SSH_MSG_CHANNEL_DATA
@@ -920,8 +984,8 @@ libssh2_packet_add_jump_point5:
                     stream_id = _libssh2_ntohu32(data + 5);
 
                 _libssh2_debug((session, LIBSSH2_TRACE_CONN,
-                               "%d bytes packet_add() for %lu/%lu/%lu",
-                               (int) (datalen - data_head),
+                               "%ld bytes packet_add() for %u/%u/%u",
+                               (long) (datalen - data_head),
                                channelp->local.id,
                                channelp->remote.id,
                                stream_id));
@@ -934,8 +998,8 @@ libssh2_packet_add_jump_point5:
                 LIBSSH2_FREE(session, data);
 
                 _libssh2_debug((session, LIBSSH2_TRACE_CONN,
-                               "Ignoring extended data and refunding %d bytes",
-                               (int) (datalen - 13)));
+                              "Ignoring extended data and refunding %ld bytes",
+                               (long) (datalen - 13)));
                 if(channelp->read_avail + datalen - data_head >=
                     channelp->remote.window_size)
                     datalen = channelp->remote.window_size -
@@ -944,11 +1008,11 @@ libssh2_packet_add_jump_point5:
                 channelp->remote.window_size -= (uint32_t)(datalen -
                                                            data_head);
                 _libssh2_debug((session, LIBSSH2_TRACE_CONN,
-                               "shrinking window size by %lu bytes to %lu, "
-                               "read_avail %lu",
-                               datalen - data_head,
+                               "shrinking window size by %ld bytes to %u, "
+                               "read_avail %ld",
+                               (long) (datalen - data_head),
                                channelp->remote.window_size,
-                               channelp->read_avail));
+                               (long) channelp->read_avail));
 
                 session->packAdd_channelp = channelp;
 
@@ -1010,10 +1074,10 @@ libssh2_packet_add_jump_point1:
             channelp->read_avail += datalen - data_head;
 
             _libssh2_debug((session, LIBSSH2_TRACE_CONN,
-                           "increasing read_avail by %lu bytes to %lu/%lu",
+                           "increasing read_avail by %ld bytes to %ld/%u",
                            (long)(datalen - data_head),
                            (long)channelp->read_avail,
-                           (long)channelp->remote.window_size));
+                           channelp->remote.window_size));
 
             break;
 
@@ -1033,7 +1097,7 @@ libssh2_packet_add_jump_point1:
             else {
                 _libssh2_debug((session,
                                LIBSSH2_TRACE_CONN,
-                               "EOF received for channel %lu/%lu",
+                               "EOF received for channel %u/%u",
                                channelp->local.id,
                                channelp->remote.id));
                 channelp->remote.eof = 1;
@@ -1061,8 +1125,8 @@ libssh2_packet_add_jump_point1:
 
                 _libssh2_debug((session,
                                LIBSSH2_TRACE_CONN,
-                               "Channel %d received request type %.*s (wr %X)",
-                               channel, len, data + 9, want_reply));
+                               "Channel %u received request type %.*s (wr %X)",
+                               channel, (int)len, data + 9, want_reply));
 
                 if(len == strlen("exit-status")
                     && (strlen("exit-status") + 9) <= datalen
@@ -1079,8 +1143,8 @@ libssh2_packet_add_jump_point1:
                             _libssh2_ntohu32(data + 10 +
                                              strlen("exit-status"));
                         _libssh2_debug((session, LIBSSH2_TRACE_CONN,
-                                       "Exit status %lu received for "
-                                       "channel %lu/%lu",
+                                       "Exit status %d received for "
+                                       "channel %u/%u",
                                        channelp->exit_status,
                                        channelp->local.id,
                                        channelp->remote.id));
@@ -1120,7 +1184,7 @@ libssh2_packet_add_jump_point1:
                             /* TODO: save error message and language tag */
                             _libssh2_debug((session, LIBSSH2_TRACE_CONN,
                                            "Exit signal %s received for "
-                                           "channel %lu/%lu",
+                                           "channel %u/%u",
                                            channelp->exit_signal,
                                            channelp->local.id,
                                            channelp->remote.id));
@@ -1161,7 +1225,7 @@ libssh2_packet_add_jump_point4:
                 return 0;
             }
             _libssh2_debug((session, LIBSSH2_TRACE_CONN,
-                           "Close received for channel %lu/%lu",
+                           "Close received for channel %u/%u",
                            channelp->local.id,
                            channelp->remote.id));
 
@@ -1251,8 +1315,8 @@ libssh2_packet_add_jump_authagent:
                     channelp->local.window_size += bytestoadd;
 
                     _libssh2_debug((session, LIBSSH2_TRACE_CONN,
-                                   "Window adjust for channel %lu/%lu, "
-                                   "adding %lu bytes, new window_size=%lu",
+                                   "Window adjust for channel %u/%u, "
+                                   "adding %u bytes, new window_size=%u",
                                    channelp->local.id,
                                    channelp->remote.id,
                                    bytestoadd,
@@ -1344,7 +1408,8 @@ _libssh2_packet_ask(LIBSSH2_SESSION * session, unsigned char packet_type,
     LIBSSH2_PACKET *packet = _libssh2_list_first(&session->packets);
 
     _libssh2_debug((session, LIBSSH2_TRACE_TRANS,
-                   "Looking for packet of type: %d", (int) packet_type));
+                   "Looking for packet of type: %u",
+                   (unsigned int)packet_type));
 
     while(packet) {
         if(packet->data[0] == packet_type
@@ -1361,6 +1426,15 @@ _libssh2_packet_ask(LIBSSH2_SESSION * session, unsigned char packet_type,
             LIBSSH2_FREE(session, packet);
 
             return 0;
+        }
+        else if(session->kex_strict &&
+                (session->state & LIBSSH2_STATE_INITIAL_KEX)) {
+            libssh2_session_disconnect(session, "strict KEX violation: "
+                                       "unexpected packet type");
+
+            return _libssh2_error(session, LIBSSH2_ERROR_SOCKET_DISCONNECT,
+                                  "strict KEX violation: "
+                                  "unexpected packet type");
         }
         packet = _libssh2_list_next(&packet->node);
     }
@@ -1423,7 +1497,10 @@ _libssh2_packet_require(LIBSSH2_SESSION * session, unsigned char packet_type,
     }
 
     while(session->socket_state == LIBSSH2_SOCKET_CONNECTED) {
-        int ret = _libssh2_transport_read(session);
+        int ret;
+        session->fullpacket_required_type = packet_type;
+        ret = _libssh2_transport_read(session);
+        session->fullpacket_required_type = 0;
         if(ret == LIBSSH2_ERROR_EAGAIN)
             return ret;
         else if(ret < 0) {

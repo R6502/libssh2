@@ -106,7 +106,7 @@ hostkey_method_ssh_rsa_init(LIBSSH2_SESSION * session,
 #endif
     {
         _libssh2_debug((session, LIBSSH2_TRACE_ERROR,
-                       "unexpected rsa type: %.*s", type_len, type));
+                       "unexpected rsa type: %.*s", (int)type_len, type));
         return -1;
     }
 
@@ -1224,7 +1224,8 @@ hostkey_method_ssh_ed25519_signv(LIBSSH2_SESSION * session,
     }
 
     return _libssh2_ed25519_sign(ctx, session, signature, signature_len,
-                                 datavec[0].iov_base, datavec[0].iov_len);
+                                 (const uint8_t *)datavec[0].iov_base,
+                                 datavec[0].iov_len);
 }
 
 
@@ -1326,18 +1327,15 @@ libssh2_hostkey_hash(LIBSSH2_SESSION * session, int hash_type)
         return (session->server_hostkey_md5_valid)
           ? (char *) session->server_hostkey_md5
           : NULL;
-        break;
 #endif /* LIBSSH2_MD5 */
     case LIBSSH2_HOSTKEY_HASH_SHA1:
         return (session->server_hostkey_sha1_valid)
           ? (char *) session->server_hostkey_sha1
           : NULL;
-        break;
     case LIBSSH2_HOSTKEY_HASH_SHA256:
         return (session->server_hostkey_sha256_valid)
           ? (char *) session->server_hostkey_sha256
           : NULL;
-        break;
     default:
         return NULL;
     }

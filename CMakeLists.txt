@@ -92,7 +92,7 @@ install(
     docs/AUTHORS docs/BINDINGS.md docs/HACKING.md
   DESTINATION ${CMAKE_INSTALL_DOCDIR})
 
-include(max_warnings)
+include(PickyWarnings)
 
 # Add socket libraries
 if(WIN32)
@@ -153,11 +153,16 @@ else()
   set(DEBUG_LOGGING_DEFAULT OFF)
 endif()
 option(ENABLE_DEBUG_LOGGING "log execution with debug trace" ${DEBUG_LOGGING_DEFAULT})
-add_feature_info(Logging ENABLE_DEBUG_LOGGING
-   "Logging of execution with debug trace")
+add_feature_info(Logging ENABLE_DEBUG_LOGGING "Logging of execution with debug trace")
 if(ENABLE_DEBUG_LOGGING)
   # Must be visible to the library and tests using internals
   add_definitions("-DLIBSSH2DEBUG")
+endif()
+
+option(LIBSSH2_NO_DEPRECATED "Build without deprecated APIs" OFF)
+add_feature_info("Without deprecated APIs" LIBSSH2_NO_DEPRECATED "")
+if(LIBSSH2_NO_DEPRECATED)
+  add_definitions("-DLIBSSH2_NO_DEPRECATED")
 endif()
 
 # Auto-detection

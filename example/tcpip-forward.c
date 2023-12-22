@@ -192,10 +192,11 @@ int main(int argc, char *argv[])
     }
 
     fprintf(stderr, "Asking server to listen on remote %s:%d\n",
-        remote_listenhost, remote_wantport);
+            remote_listenhost, remote_wantport);
 
     listener = libssh2_channel_forward_listen_ex(session, remote_listenhost,
-        remote_wantport, &remote_listenport, 1);
+                                                 remote_wantport,
+                                                 &remote_listenport, 1);
     if(!listener) {
         fprintf(stderr, "Could not start the tcpip-forward listener.\n"
                         "(Note that this can be a problem at the server."
@@ -204,7 +205,7 @@ int main(int argc, char *argv[])
     }
 
     fprintf(stderr, "Server is listening on %s:%d\n", remote_listenhost,
-        remote_listenport);
+            remote_listenport);
 
     fprintf(stderr, "Waiting for remote connection\n");
     channel = libssh2_channel_forward_accept(listener);
@@ -216,8 +217,8 @@ int main(int argc, char *argv[])
     }
 
     fprintf(stderr,
-        "Accepted remote connection. Connecting to local server %s:%d\n",
-        local_destip, local_destport);
+            "Accepted remote connection. Connecting to local server %s:%d\n",
+            local_destip, local_destport);
     forwardsock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
     if(forwardsock == LIBSSH2_INVALID_SOCKET) {
         fprintf(stderr, "failed to open forward socket.\n");
@@ -237,7 +238,8 @@ int main(int argc, char *argv[])
     }
 
     fprintf(stderr, "Forwarding connection from remote %s:%d to local %s:%d\n",
-        remote_listenhost, remote_listenport, local_destip, local_destport);
+            remote_listenhost, remote_listenport,
+            local_destip, local_destport);
 
     /* Must use non-blocking IO hereafter due to the current libssh2 API */
     libssh2_session_set_blocking(session, 0);
@@ -261,15 +263,15 @@ int main(int argc, char *argv[])
             }
             else if(len == 0) {
                 fprintf(stderr, "The local server at %s:%d disconnected.\n",
-                    local_destip, local_destport);
+                        local_destip, local_destport);
                 goto shutdown;
             }
             wr = 0;
             do {
-                nwritten = libssh2_channel_write(channel, buf, len);
+                nwritten = libssh2_channel_write(channel, buf, (size_t)len);
                 if(nwritten < 0) {
-                    fprintf(stderr, "libssh2_channel_write: %d\n",
-                            (int)nwritten);
+                    fprintf(stderr, "libssh2_channel_write: %ld\n",
+                            (long)nwritten);
                     goto shutdown;
                 }
                 wr += nwritten;
@@ -281,13 +283,13 @@ int main(int argc, char *argv[])
             if(LIBSSH2_ERROR_EAGAIN == len)
                 break;
             else if(len < 0) {
-                fprintf(stderr, "libssh2_channel_read: %d",
-                        (int)len);
+                fprintf(stderr, "libssh2_channel_read: %ld",
+                        (long)len);
                 goto shutdown;
             }
             wr = 0;
             while(wr < len) {
-                nsent = send(forwardsock, buf + wr, len - wr, 0);
+                nsent = send(forwardsock, buf + wr, (size_t)(len - wr), 0);
                 if(nsent <= 0) {
                     fprintf(stderr, "failed to send().\n");
                     goto shutdown;
@@ -296,7 +298,7 @@ int main(int argc, char *argv[])
             }
             if(libssh2_channel_eof(channel)) {
                 fprintf(stderr, "The remote client at %s:%d disconnected.\n",
-                    remote_listenhost, remote_listenport);
+                        remote_listenhost, remote_listenport);
                 goto shutdown;
             }
         }
@@ -306,11 +308,7 @@ shutdown:
 
     if(forwardsock != LIBSSH2_INVALID_SOCKET) {
         shutdown(forwardsock, 2);
-#ifdef _WIN32
-        closesocket(forwardsock);
-#else
-        close(forwardsock);
-#endif
+        LIBSSH2_SOCKET_CLOSE(forwardsock);
     }
 
     if(channel)
@@ -326,14 +324,14 @@ shutdown:
 
     if(sock != LIBSSH2_INVALID_SOCKET) {
         shutdown(sock, 2);
-#ifdef _WIN32
-        closesocket(sock);
-#else
-        close(sock);
-#endif
+        LIBSSH2_SOCKET_CLOSE(sock);
     }
 
     libssh2_exit();
+
+#ifdef _WIN32
+    WSACleanup();
+#endif
 
     return 0;
 }

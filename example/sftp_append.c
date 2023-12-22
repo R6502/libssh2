@@ -214,7 +214,7 @@ int main(int argc, char *argv[])
             if(nwritten < 0)
                 break;
             ptr += nwritten;
-            nread -= nwritten;
+            nread -= (size_t)nwritten;
         } while(nread);
 
     } while(nwritten > 0);
@@ -231,11 +231,7 @@ shutdown:
 
     if(sock != LIBSSH2_INVALID_SOCKET) {
         shutdown(sock, 2);
-#ifdef _WIN32
-        closesocket(sock);
-#else
-        close(sock);
-#endif
+        LIBSSH2_SOCKET_CLOSE(sock);
     }
 
     if(local)
@@ -244,6 +240,10 @@ shutdown:
     fprintf(stderr, "all done\n");
 
     libssh2_exit();
+
+#ifdef _WIN32
+    WSACleanup();
+#endif
 
     return 0;
 }

@@ -224,12 +224,12 @@ int main(int argc, char *argv[])
                 goto shutdown;
             }
             else {
-                fprintf(stderr, "libssh2_scp_recv() spin\n");
+                fprintf(stderr, "libssh2_scp_recv2() spin\n");
                 waitsocket(sock, session);
             }
         }
     } while(!channel);
-    fprintf(stderr, "libssh2_scp_recv() is done, now receive data.\n");
+    fprintf(stderr, "libssh2_scp_recv2() is done, now receive data.\n");
 
     while(got < fileinfo.st_size) {
         char mem[1024 * 24];
@@ -243,9 +243,9 @@ int main(int argc, char *argv[])
             }
 
             /* loop until we block */
-            nread = libssh2_channel_read(channel, mem, amount);
+            nread = libssh2_channel_read(channel, mem, (size_t)amount);
             if(nread > 0) {
-                write(1, mem, nread);
+                write(1, mem, (size_t)nread);
                 got += nread;
                 total += nread;
             }
@@ -285,16 +285,16 @@ shutdown:
 
     if(sock != LIBSSH2_INVALID_SOCKET) {
         shutdown(sock, 2);
-#ifdef _WIN32
-        closesocket(sock);
-#else
-        close(sock);
-#endif
+        LIBSSH2_SOCKET_CLOSE(sock);
     }
 
     fprintf(stderr, "all done\n");
 
     libssh2_exit();
+
+#ifdef _WIN32
+    WSACleanup();
+#endif
 
     return 0;
 }

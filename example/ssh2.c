@@ -222,10 +222,18 @@ int main(int argc, char *argv[])
                 fprintf(stderr, "out of memory\n");
                 goto shutdown;
             }
+            /* Avoid false positives */
+#if defined(__GNUC__) && __GNUC__ >= 7
+#pragma GCC diagnostic push
+#pragma GCC diagnostic warning "-Wformat-truncation=1"
+#endif
             /* Using asprintf() here would be much cleaner,
                but less portable */
             snprintf(fn1, fn1sz, "%s/%s", h, pubkey);
             snprintf(fn2, fn2sz, "%s/%s", h, privkey);
+#if defined(__GNUC__) && __GNUC__ >= 7
+#pragma GCC diagnostic pop
+#endif
 
             if(libssh2_userauth_publickey_fromfile(session, username,
                                                    fn1, fn2,
@@ -309,9 +317,9 @@ int main(int argc, char *argv[])
             char buf[1024];
             ssize_t err = libssh2_channel_read(channel, buf, sizeof(buf));
             if(err < 0)
-                fprintf(stderr, "Unable to read response: %d\n", (int)err);
+                fprintf(stderr, "Unable to read response: %ld\n", (long)err);
             else {
-                fwrite(buf, 1, err, stdout);
+                fwrite(buf, 1, (size_t)err, stdout);
             }
         }
     }
@@ -341,16 +349,16 @@ shutdown:
 
     if(sock != LIBSSH2_INVALID_SOCKET) {
         shutdown(sock, 2);
-#ifdef _WIN32
-        closesocket(sock);
-#else
-        close(sock);
-#endif
+        LIBSSH2_SOCKET_CLOSE(sock);
     }
 
     fprintf(stderr, "all done\n");
 
     libssh2_exit();
+
+#ifdef _WIN32
+    WSACleanup();
+#endif
 
     return rc;
 }

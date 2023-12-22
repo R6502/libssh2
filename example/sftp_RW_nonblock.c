@@ -227,14 +227,14 @@ int main(int argc, char *argv[])
         do {
             /* read in a loop until we block */
             nread = libssh2_sftp_read(sftp_handle, mem, sizeof(mem));
-            fprintf(stderr, "libssh2_sftp_read returned %d\n",
-                    (int)nread);
+            fprintf(stderr, "libssh2_sftp_read returned %ld\n",
+                    (long)nread);
 
             if(nread > 0) {
                 /* write to stderr */
-                write(2, mem, nread);
+                write(2, mem, (size_t)nread);
                 /* write to temporary storage area */
-                fwrite(mem, nread, 1, tempstorage);
+                fwrite(mem, (size_t)nread, 1, tempstorage);
             }
         } while(nread > 0);
 
@@ -297,8 +297,10 @@ int main(int argc, char *argv[])
                 /* write data in a loop until we block */
                 nwritten = libssh2_sftp_write(sftp_handle, ptr,
                                               nread);
+                if(nwritten < 0)
+                    break;
                 ptr += nwritten;
-                nread -= nwritten;
+                nread -= (size_t)nwritten;
             } while(nwritten >= 0);
 
             if(nwritten != LIBSSH2_ERROR_EAGAIN) {
@@ -319,8 +321,7 @@ int main(int argc, char *argv[])
             if(rc <= 0) {
                 /* negative is error
                    0 is timeout */
-                fprintf(stderr, "SFTP upload timed out: %d\n",
-                        rc);
+                fprintf(stderr, "SFTP upload timed out: %d\n", rc);
                 break;
             }
         } while(1);
@@ -342,11 +343,7 @@ shutdown:
 
     if(sock != LIBSSH2_INVALID_SOCKET) {
         shutdown(sock, 2);
-#ifdef _WIN32
-        closesocket(sock);
-#else
-        close(sock);
-#endif
+        LIBSSH2_SOCKET_CLOSE(sock);
     }
 
     if(tempstorage)
@@ -355,6 +352,10 @@ shutdown:
     fprintf(stderr, "all done\n");
 
     libssh2_exit();
+
+#ifdef _WIN32
+    WSACleanup();
+#endif
 
     return 0;
 }

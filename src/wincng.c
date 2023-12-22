@@ -1283,7 +1283,7 @@ _libssh2_wincng_rsa_sha2_verify(libssh2_rsa_ctx *rsa,
 }
 #endif
 
-int
+static int
 _libssh2_wincng_rsa_sha_sign(LIBSSH2_SESSION *session,
                              libssh2_rsa_ctx *rsa,
                              const unsigned char *hash,
@@ -1294,7 +1294,7 @@ _libssh2_wincng_rsa_sha_sign(LIBSSH2_SESSION *session,
     BCRYPT_PKCS1_PADDING_INFO paddingInfo;
     unsigned char *data, *sig;
     ULONG cbData, datalen, siglen;
-    int ret;
+    NTSTATUS ret;
 
     if(hash_len == SHA_DIGEST_LENGTH)
         paddingInfo.pszAlgId = BCRYPT_SHA1_ALGORITHM;
@@ -1336,12 +1336,38 @@ _libssh2_wincng_rsa_sha_sign(LIBSSH2_SESSION *session,
             }
         }
         else
-            ret = STATUS_NO_MEMORY;
+            ret = (NTSTATUS)STATUS_NO_MEMORY;
     }
 
     _libssh2_wincng_safe_free(data, datalen);
 
     return BCRYPT_SUCCESS(ret) ? 0 : -1;
+}
+
+int
+_libssh2_wincng_rsa_sha1_sign(LIBSSH2_SESSION *session,
+                              libssh2_rsa_ctx *rsa,
+                              const unsigned char *hash,
+                              size_t hash_len,
+                              unsigned char **signature,
+                              size_t *signature_len)
+{
+    return _libssh2_wincng_rsa_sha_sign(session, rsa,
+                                        hash, hash_len,
+                                        signature, signature_len);
+}
+
+int
+_libssh2_wincng_rsa_sha2_sign(LIBSSH2_SESSION *session,
+                              libssh2_rsa_ctx *rsa,
+                              const unsigned char *hash,
+                              size_t hash_len,
+                              unsigned char **signature,
+                              size_t *signature_len)
+{
+    return _libssh2_wincng_rsa_sha_sign(session, rsa,
+                                        hash, hash_len,
+                                        signature, signature_len);
 }
 
 void
@@ -1601,7 +1627,7 @@ _libssh2_wincng_dsa_sha1_sign(libssh2_dsa_ctx *dsa,
 {
     unsigned char *data, *sig;
     ULONG cbData, datalen, siglen;
-    int ret;
+    NTSTATUS ret;
 
     datalen = (ULONG)hash_len;
     data = malloc(datalen);
@@ -1627,10 +1653,10 @@ _libssh2_wincng_dsa_sha1_sign(libssh2_dsa_ctx *dsa,
                 _libssh2_wincng_safe_free(sig, siglen);
             }
             else
-                ret = STATUS_NO_MEMORY;
+                ret = (NTSTATUS)STATUS_NO_MEMORY;
         }
         else
-            ret = STATUS_NO_MEMORY;
+            ret = (NTSTATUS)STATUS_NO_MEMORY;
     }
 
     _libssh2_wincng_safe_free(data, datalen);
@@ -2025,7 +2051,7 @@ _libssh2_wincng_cipher_crypt(_libssh2_cipher_ctx *ctx,
 {
     unsigned char *pbOutput, *pbInput;
     ULONG cbOutput, cbInput;
-    int ret;
+    NTSTATUS ret;
 
     (void)type;
     (void)firstlast;
@@ -2073,7 +2099,7 @@ _libssh2_wincng_cipher_crypt(_libssh2_cipher_ctx *ctx,
             _libssh2_wincng_safe_free(pbOutput, cbOutput);
         }
         else
-            ret = STATUS_NO_MEMORY;
+            ret = (NTSTATUS)STATUS_NO_MEMORY;
     }
 
     return BCRYPT_SUCCESS(ret) ? 0 : -1;
@@ -2192,7 +2218,7 @@ _libssh2_wincng_bignum_mod_exp(_libssh2_bn *r,
     BCRYPT_RSAKEY_BLOB *rsakey;
     unsigned char *bignum;
     ULONG keylen, offset, length;
-    int ret;
+    NTSTATUS ret;
 
     if(!r || !a || !p || !m)
         return -1;
@@ -2244,10 +2270,10 @@ _libssh2_wincng_bignum_mod_exp(_libssh2_bn *r,
                     }
                 }
                 else
-                    ret = STATUS_NO_MEMORY;
+                    ret = (NTSTATUS)STATUS_NO_MEMORY;
             }
             else
-                ret = STATUS_NO_MEMORY;
+                ret = (NTSTATUS)STATUS_NO_MEMORY;
         }
 
         BCryptDestroyKey(hKey);
@@ -2602,7 +2628,7 @@ _libssh2_dh_secret(_libssh2_dh_ctx *dhctx, _libssh2_bn *secret,
         BCRYPT_KEY_HANDLE peer_public = NULL;
         BCRYPT_SECRET_HANDLE agreement = NULL;
         ULONG secret_len_bytes = 0;
-        int status;
+        NTSTATUS status;
         unsigned char *start, *end;
         BCRYPT_DH_KEY_BLOB *public_blob;
         ULONG key_length_bytes = max(f->length, dhctx->dh_params->cbKeyLength);
@@ -2668,7 +2694,7 @@ _libssh2_dh_secret(_libssh2_dh_ctx *dhctx, _libssh2_bn *secret,
         /* Expand the secret bignum to be ready to receive the derived secret
          * */
         if(_libssh2_wincng_bignum_resize(secret, secret_len_bytes)) {
-            status = STATUS_NO_MEMORY;
+            status = (NTSTATUS)STATUS_NO_MEMORY;
             goto out;
         }
 

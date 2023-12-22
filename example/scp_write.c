@@ -178,13 +178,13 @@ int main(int argc, char *argv[])
             /* write the same data over and over, until error or completion */
             nwritten = libssh2_channel_write(channel, ptr, nread);
             if(nwritten < 0) {
-                fprintf(stderr, "ERROR %d\n", (int)nwritten);
+                fprintf(stderr, "ERROR %ld\n", (long)nwritten);
                 break;
             }
             else {
                 /* nwritten indicates how many bytes were written this time */
                 ptr += nwritten;
-                nread -= nwritten;
+                nread -= (size_t)nwritten;
             }
         } while(nread);
 
@@ -211,11 +211,7 @@ shutdown:
 
     if(sock != LIBSSH2_INVALID_SOCKET) {
         shutdown(sock, 2);
-#ifdef _WIN32
-        closesocket(sock);
-#else
-        close(sock);
-#endif
+        LIBSSH2_SOCKET_CLOSE(sock);
     }
 
     if(local)
@@ -224,6 +220,10 @@ shutdown:
     fprintf(stderr, "all done\n");
 
     libssh2_exit();
+
+#ifdef _WIN32
+    WSACleanup();
+#endif
 
     return 0;
 }
