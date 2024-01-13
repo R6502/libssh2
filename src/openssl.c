@@ -44,16 +44,161 @@
 #include <stdlib.h>
 #include <assert.h>
 
-#ifndef EVP_MAX_BLOCK_LENGTH
-#define EVP_MAX_BLOCK_LENGTH 32
+int _libssh2_hmac_ctx_init(libssh2_hmac_ctx *ctx)
+{
+#ifdef USE_OPENSSL_3
+    *ctx = NULL;
+    return 1;
+#elif defined(HAVE_OPAQUE_STRUCTS)
+    *ctx = HMAC_CTX_new();
+    return *ctx ? 1 : 0;
+#else
+    HMAC_CTX_init(ctx);
+    return 1;
+#endif
+}
+
+#ifdef USE_OPENSSL_3
+static int _libssh2_hmac_init(libssh2_hmac_ctx *ctx,
+                              void *key, size_t keylen,
+                              const char *digest_name)
+{
+    EVP_MAC* mac;
+    OSSL_PARAM params[3];
+
+    mac = EVP_MAC_fetch(NULL, OSSL_MAC_NAME_HMAC, NULL);
+    if(!mac)
+        return 0;
+
+    *ctx = EVP_MAC_CTX_new(mac);
+    EVP_MAC_free(mac);
+    if(!*ctx)
+        return 0;
+
+    params[0] = OSSL_PARAM_construct_octet_string(
+        OSSL_MAC_PARAM_KEY, (void *)key, keylen);
+    params[1] = OSSL_PARAM_construct_utf8_string(
+        OSSL_MAC_PARAM_DIGEST, (char *)digest_name, 0);
+    params[2] = OSSL_PARAM_construct_end();
+
+    return EVP_MAC_init(*ctx, NULL, 0, params);
+}
 #endif
 
+#if LIBSSH2_MD5
+int _libssh2_hmac_md5_init(libssh2_hmac_ctx *ctx,
+                           void *key, size_t keylen)
+{
+#ifdef USE_OPENSSL_3
+    return _libssh2_hmac_init(ctx, key, keylen, OSSL_DIGEST_NAME_MD5);
+#elif defined(HAVE_OPAQUE_STRUCTS)
+    return HMAC_Init_ex(*ctx, key, (int)keylen, EVP_md5(), NULL);
+#else
+    return HMAC_Init_ex(ctx, key, (int)keylen, EVP_md5(), NULL);
+#endif
+}
+#endif
+
+#if LIBSSH2_HMAC_RIPEMD
+int _libssh2_hmac_ripemd160_init(libssh2_hmac_ctx *ctx,
+                                 void *key, size_t keylen)
+{
+#ifdef USE_OPENSSL_3
+    return _libssh2_hmac_init(ctx, key, keylen, OSSL_DIGEST_NAME_RIPEMD160);
+#elif defined(HAVE_OPAQUE_STRUCTS)
+    return HMAC_Init_ex(*ctx, key, (int)keylen, EVP_ripemd160(), NULL);
+#else
+    return HMAC_Init_ex(ctx, key, (int)keylen, EVP_ripemd160(), NULL);
+#endif
+}
+#endif
+
+int _libssh2_hmac_sha1_init(libssh2_hmac_ctx *ctx,
+                            void *key, size_t keylen)
+{
+#ifdef USE_OPENSSL_3
+    return _libssh2_hmac_init(ctx, key, keylen, OSSL_DIGEST_NAME_SHA1);
+#elif defined(HAVE_OPAQUE_STRUCTS)
+    return HMAC_Init_ex(*ctx, key, (int)keylen, EVP_sha1(), NULL);
+#else
+    return HMAC_Init_ex(ctx, key, (int)keylen, EVP_sha1(), NULL);
+#endif
+}
+
+int _libssh2_hmac_sha256_init(libssh2_hmac_ctx *ctx,
+                              void *key, size_t keylen)
+{
+#ifdef USE_OPENSSL_3
+    return _libssh2_hmac_init(ctx, key, keylen, OSSL_DIGEST_NAME_SHA2_256);
+#elif defined(HAVE_OPAQUE_STRUCTS)
+    return HMAC_Init_ex(*ctx, key, (int)keylen, EVP_sha256(), NULL);
+#else
+    return HMAC_Init_ex(ctx, key, (int)keylen, EVP_sha256(), NULL);
+#endif
+}
+
+int _libssh2_hmac_sha512_init(libssh2_hmac_ctx *ctx,
+                              void *key, size_t keylen)
+{
+#ifdef USE_OPENSSL_3
+    return _libssh2_hmac_init(ctx, key, keylen, OSSL_DIGEST_NAME_SHA2_512);
+#elif defined(HAVE_OPAQUE_STRUCTS)
+    return HMAC_Init_ex(*ctx, key, (int)keylen, EVP_sha512(), NULL);
+#else
+    return HMAC_Init_ex(ctx, key, (int)keylen, EVP_sha512(), NULL);
+#endif
+}
+
+int _libssh2_hmac_update(libssh2_hmac_ctx *ctx,
+                         const void *data, size_t datalen)
+{
+#ifdef USE_OPENSSL_3
+    return EVP_MAC_update(*ctx, data, datalen);
+#elif defined(HAVE_OPAQUE_STRUCTS)
+/* FIXME: upstream bug as of v5.6.0: datalen is int instead of size_t */
+#if defined(LIBSSH2_WOLFSSL)
+    return HMAC_Update(*ctx, data, (int)datalen);
+#else /* !LIBSSH2_WOLFSSL */
+    return HMAC_Update(*ctx, data, datalen);
+#endif /* LIBSSH2_WOLFSSL */
+#else
+    return HMAC_Update(ctx, data, datalen);
+#endif
+}
+
+int _libssh2_hmac_final(libssh2_hmac_ctx *ctx, void *data)
+{
+#ifdef USE_OPENSSL_3
+    return EVP_MAC_final(*ctx, data, NULL, MAX_MACSIZE);
+#elif defined(HAVE_OPAQUE_STRUCTS)
+    return HMAC_Final(*ctx, data, NULL);
+#else
+    return HMAC_Final(ctx, data, NULL);
+#endif
+}
+
+void _libssh2_hmac_cleanup(libssh2_hmac_ctx *ctx)
+{
+#ifdef USE_OPENSSL_3
+    EVP_MAC_CTX_free(*ctx);
+#elif defined(HAVE_OPAQUE_STRUCTS)
+    HMAC_CTX_free(*ctx);
+#else
+    HMAC_cleanup(ctx);
+#endif
+}
+
 static int
-read_openssh_private_key_from_memory(void **key_ctx, LIBSSH2_SESSION *session,
-                                     const char *key_type,
-                                     const char *filedata,
-                                     size_t filedata_len,
-                                     unsigned const char *passphrase);
+_libssh2_pub_priv_openssh_keyfilememory(LIBSSH2_SESSION *session,
+                                        void **key_ctx,
+                                        const char *key_type,
+                                        unsigned char **method,
+                                        size_t *method_len,
+                                        unsigned char **pubkeydata,
+                                        size_t *pubkeydata_len,
+                                        const char *privatekeydata,
+                                        size_t privatekeydata_len,
+                                        unsigned const char *passphrase);
 
 static int
 _libssh2_sk_pub_openssh_keyfilememory(LIBSSH2_SESSION *session,
@@ -89,32 +234,6 @@ write_bn(unsigned char *buf, const BIGNUM *bn, int bn_bytes)
     _libssh2_htonu32(p - 4, bn_bytes);  /* Post write bn size. */
 
     return p + bn_bytes;
-}
-#endif
-
-#ifdef USE_OPENSSL_3
-int _libssh2_hmac_init(libssh2_hmac_ctx *ctx, void *key, size_t keylen,
-                       const char *digest_name)
-{
-    EVP_MAC* mac;
-    OSSL_PARAM params[3];
-
-    mac = EVP_MAC_fetch(NULL, OSSL_MAC_NAME_HMAC, NULL);
-    if(!mac)
-        return 0;
-
-    *ctx = EVP_MAC_CTX_new(mac);
-    EVP_MAC_free(mac);
-    if(!*ctx)
-        return 0;
-
-    params[0] = OSSL_PARAM_construct_octet_string(
-        OSSL_MAC_PARAM_KEY, (void *)key, keylen);
-    params[1] = OSSL_PARAM_construct_utf8_string(
-        OSSL_MAC_PARAM_DIGEST, (char *)digest_name, 0);
-    params[2] = OSSL_PARAM_construct_end();
-
-    return EVP_MAC_init(*ctx, NULL, 0, params);
 }
 #endif
 
@@ -851,6 +970,10 @@ _libssh2_cipher_init(_libssh2_cipher_ctx * h,
 #endif
 }
 
+#ifndef EVP_MAX_BLOCK_LENGTH
+#define EVP_MAX_BLOCK_LENGTH 32
+#endif
+
 int
 _libssh2_cipher_crypt(_libssh2_cipher_ctx * ctx,
                       _libssh2_cipher_type(algo),
@@ -1060,7 +1183,8 @@ read_private_key_from_file(void **key_ctx,
 int
 _libssh2_rsa_new_private_frommemory(libssh2_rsa_ctx ** rsa,
                                     LIBSSH2_SESSION * session,
-                                    const char *filedata, size_t filedata_len,
+                                    const char *filedata,
+                                    size_t filedata_len,
                                     unsigned const char *passphrase)
 {
     int rc;
@@ -1075,12 +1199,16 @@ _libssh2_rsa_new_private_frommemory(libssh2_rsa_ctx ** rsa,
 
     _libssh2_init_if_needed();
 
-    rc = read_private_key_from_memory((void **) rsa, read_rsa,
-                                      filedata, filedata_len, passphrase);
+    rc = read_private_key_from_memory((void **)rsa, read_rsa,
+                                      filedata, filedata_len,
+                                      passphrase);
 
     if(rc) {
-        rc = read_openssh_private_key_from_memory((void **)rsa, session,
-                        "ssh-rsa", filedata, filedata_len, passphrase);
+        rc = _libssh2_pub_priv_openssh_keyfilememory(session, (void **)rsa,
+                                                     "ssh-rsa",
+                                                     NULL, NULL, NULL, NULL,
+                                                     filedata, filedata_len,
+                                                     passphrase);
     }
 
     return rc;
@@ -1440,8 +1568,8 @@ _libssh2_rsa_new_openssh_private(libssh2_rsa_ctx ** rsa,
 
     if(strcmp("ssh-rsa", (const char *)buf) == 0) {
         rc = gen_publickey_from_rsa_openssh_priv_data(session, decrypted,
-                                                      NULL, 0,
-                                                      NULL, 0, rsa);
+                                                      NULL, NULL,
+                                                      NULL, NULL, rsa);
     }
     else {
         rc = -1;
@@ -1486,7 +1614,8 @@ _libssh2_rsa_new_private(libssh2_rsa_ctx ** rsa,
 int
 _libssh2_dsa_new_private_frommemory(libssh2_dsa_ctx ** dsa,
                                     LIBSSH2_SESSION * session,
-                                    const char *filedata, size_t filedata_len,
+                                    const char *filedata,
+                                    size_t filedata_len,
                                     unsigned const char *passphrase)
 {
     int rc;
@@ -1506,10 +1635,11 @@ _libssh2_dsa_new_private_frommemory(libssh2_dsa_ctx ** dsa,
                                       passphrase);
 
     if(rc) {
-        rc = read_openssh_private_key_from_memory((void **)dsa, session,
-                                                  "ssh-dsa",
-                                                  filedata, filedata_len,
-                                                  passphrase);
+        rc = _libssh2_pub_priv_openssh_keyfilememory(session, (void **)dsa,
+                                                     "ssh-dsa",
+                                                     NULL, NULL, NULL, NULL,
+                                                     filedata, filedata_len,
+                                                     passphrase);
     }
 
     return rc;
@@ -1784,8 +1914,8 @@ _libssh2_dsa_new_openssh_private(libssh2_dsa_ctx ** dsa,
 
     if(strcmp("ssh-dss", (const char *)buf) == 0) {
         rc = gen_publickey_from_dsa_openssh_priv_data(session, decrypted,
-                                                      NULL, 0,
-                                                      NULL, 0, dsa);
+                                                      NULL, NULL,
+                                                      NULL, NULL, dsa);
     }
     else {
         rc = -1;
@@ -1827,7 +1957,6 @@ _libssh2_dsa_new_private(libssh2_dsa_ctx ** dsa,
 #endif /* LIBSSH_DSA */
 
 #if LIBSSH2_ECDSA
-
 int
 _libssh2_ecdsa_new_private_frommemory(libssh2_ecdsa_ctx ** ec_ctx,
                                       LIBSSH2_SESSION * session,
@@ -1838,22 +1967,25 @@ _libssh2_ecdsa_new_private_frommemory(libssh2_ecdsa_ctx ** ec_ctx,
     int rc;
 
 #if defined(USE_OPENSSL_3)
-    pem_read_bio_func read_ec = (pem_read_bio_func) &PEM_read_bio_PrivateKey;
+    pem_read_bio_func read_ec =
+        (pem_read_bio_func) &PEM_read_bio_PrivateKey;
 #else
-    pem_read_bio_func read_ec = (pem_read_bio_func) &PEM_read_bio_ECPrivateKey;
+    pem_read_bio_func read_ec =
+        (pem_read_bio_func) &PEM_read_bio_ECPrivateKey;
 #endif
 
     _libssh2_init_if_needed();
 
-    rc = read_private_key_from_memory((void **) ec_ctx, read_ec,
+    rc = read_private_key_from_memory((void **)ec_ctx, read_ec,
                                       filedata, filedata_len,
                                       passphrase);
 
     if(rc) {
-        rc = read_openssh_private_key_from_memory((void **)ec_ctx, session,
-                                                  "ssh-ecdsa",
-                                                  filedata, filedata_len,
-                                                  passphrase);
+        rc = _libssh2_pub_priv_openssh_keyfilememory(session, (void **)ec_ctx,
+                                                     "ssh-ecdsa",
+                                                     NULL, NULL, NULL, NULL,
+                                                     filedata, filedata_len,
+                                                     passphrase);
     }
 
     return rc;
@@ -2364,12 +2496,9 @@ _libssh2_ed25519_new_private(libssh2_ed25519_ctx ** ed_ctx,
     }
 
     if(strcmp("ssh-ed25519", (const char *)buf) == 0) {
-        rc = gen_publickey_from_ed25519_openssh_priv_data(session,
-                                                          decrypted,
-                                                          NULL,
-                                                          NULL,
-                                                          NULL,
-                                                          NULL,
+        rc = gen_publickey_from_ed25519_openssh_priv_data(session, decrypted,
+                                                          NULL, NULL,
+                                                          NULL, NULL,
                                                           &ctx);
     }
     else {
@@ -2438,10 +2567,8 @@ _libssh2_ed25519_new_private_sk(libssh2_ed25519_ctx **ed_ctx,
     if(strcmp("sk-ssh-ed25519@openssh.com", (const char *)buf) == 0) {
         rc = gen_publickey_from_sk_ed25519_openssh_priv_data(session,
                                                              decrypted,
-                                                             NULL,
-                                                             NULL,
-                                                             NULL,
-                                                             NULL,
+                                                             NULL, NULL,
+                                                             NULL, NULL,
                                                              flags,
                                                              application,
                                                              key_handle,
@@ -2491,10 +2618,11 @@ _libssh2_ed25519_new_private_frommemory(libssh2_ed25519_ctx ** ed_ctx,
         return 0;
     }
 
-    return read_openssh_private_key_from_memory((void **)ed_ctx, session,
-                                                "ssh-ed25519",
-                                                filedata, filedata_len,
-                                                passphrase);
+    return _libssh2_pub_priv_openssh_keyfilememory(session, (void **)ed_ctx,
+                                                   "ssh-ed25519",
+                                                   NULL, NULL, NULL, NULL,
+                                                   filedata, filedata_len,
+                                                   passphrase);
 }
 
 int
@@ -3576,8 +3704,9 @@ _libssh2_ecdsa_new_openssh_private(libssh2_ecdsa_ctx ** ec_ctx,
 
     if(rc == 0) {
         rc = gen_publickey_from_ecdsa_openssh_priv_data(session, type,
-                                                        decrypted, NULL, 0,
-                                                        NULL, 0, ec_ctx);
+                                                        decrypted,
+                                                        NULL, NULL,
+                                                        NULL, NULL, ec_ctx);
     }
     else {
         rc = -1;
@@ -3637,8 +3766,8 @@ _libssh2_ecdsa_new_openssh_private_sk(libssh2_ecdsa_ctx ** ec_ctx,
     if(strcmp("sk-ecdsa-sha2-nistp256@openssh.com", (const char *)buf) == 0) {
         rc = gen_publickey_from_sk_ecdsa_openssh_priv_data(session,
                                                            decrypted,
-                                                           NULL, 0,
-                                                           NULL, 0,
+                                                           NULL, NULL,
+                                                           NULL, NULL,
                                                            flags,
                                                            application,
                                                            key_handle,
@@ -3663,15 +3792,17 @@ _libssh2_ecdsa_new_private(libssh2_ecdsa_ctx ** ec_ctx,
     int rc;
 
 #if defined(USE_OPENSSL_3)
-    pem_read_bio_func read_ec = (pem_read_bio_func) &PEM_read_bio_PrivateKey;
+    pem_read_bio_func read_ec =
+        (pem_read_bio_func) &PEM_read_bio_PrivateKey;
 #else
-    pem_read_bio_func read_ec = (pem_read_bio_func) &PEM_read_bio_ECPrivateKey;
+    pem_read_bio_func read_ec =
+        (pem_read_bio_func) &PEM_read_bio_ECPrivateKey;
 #endif
 
     _libssh2_init_if_needed();
 
     rc = read_private_key_from_file((void **) ec_ctx, read_ec,
-      filename, passphrase);
+                                    filename, passphrase);
 
     if(rc) {
         return _libssh2_ecdsa_new_openssh_private(ec_ctx, session,
@@ -3694,15 +3825,17 @@ _libssh2_ecdsa_new_private_sk(libssh2_ecdsa_ctx ** ec_ctx,
     int rc;
 
 #if defined(USE_OPENSSL_3)
-    pem_read_bio_func read_ec = (pem_read_bio_func) &PEM_read_bio_PrivateKey;
+    pem_read_bio_func read_ec =
+        (pem_read_bio_func) &PEM_read_bio_PrivateKey;
 #else
-    pem_read_bio_func read_ec = (pem_read_bio_func) &PEM_read_bio_ECPrivateKey;
+    pem_read_bio_func read_ec =
+        (pem_read_bio_func) &PEM_read_bio_ECPrivateKey;
 #endif
 
     _libssh2_init_if_needed();
 
     rc = read_private_key_from_file((void **) ec_ctx, read_ec,
-      filename, passphrase);
+                                    filename, passphrase);
 
     if(rc) {
         return _libssh2_ecdsa_new_openssh_private_sk(ec_ctx,
@@ -4461,10 +4594,8 @@ _libssh2_pub_priv_openssh_keyfilememory(LIBSSH2_SESSION *session,
                                                                  method_len,
                                                                  pubkeydata,
                                                                 pubkeydata_len,
-                                                                 NULL,
-                                                                 NULL,
-                                                                 NULL,
-                                                                 NULL,
+                                                                 NULL, NULL,
+                                                                 NULL, NULL,
                                                (libssh2_ed25519_ctx**)key_ctx);
         }
     }
@@ -4500,9 +4631,8 @@ _libssh2_pub_priv_openssh_keyfilememory(LIBSSH2_SESSION *session,
                                                            method, method_len,
                                                            pubkeydata,
                                                            pubkeydata_len,
-                                                           NULL,
                                                            NULL, NULL,
-                                                           NULL,
+                                                           NULL, NULL,
                                                  (libssh2_ecdsa_ctx**)key_ctx);
     }
     else if(_libssh2_ecdsa_curve_type_from_name((const char *)buf, &type)
@@ -4635,19 +4765,6 @@ _libssh2_sk_pub_openssh_keyfilememory(LIBSSH2_SESSION *session,
         _libssh2_string_buf_free(session, decrypted);
 
     return rc;
-}
-
-static int
-read_openssh_private_key_from_memory(void **key_ctx, LIBSSH2_SESSION *session,
-                                     const char *key_type,
-                                     const char *filedata,
-                                     size_t filedata_len,
-                                     unsigned const char *passphrase)
-{
-    return _libssh2_pub_priv_openssh_keyfilememory(session, key_ctx, key_type,
-                                                   NULL, NULL, NULL, NULL,
-                                                   filedata, filedata_len,
-                                                   passphrase);
 }
 
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
