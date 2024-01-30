@@ -1,5 +1,40 @@
 libssh2 1.11.1_DEV
 
+Deprecation notices:
+
+- Starting June 2024, the following algos go deprecated and will be
+  disabled in default builds (with an option to enable them):
+
+  - DSA: `ssh-dss` hostkeys.
+      You can disable it now with `-DLIBSSH2_NO_DSA`.
+      Disabled by default in OpenSSH 7.0 (2015-08-11).
+  - MD5-based MACs and hashes: `hmac-md5`, `hmac-md5-96`,
+    `LIBSSH2_HOSTKEY_HASH_MD5`
+      You can disable it now with `-DLIBSSH2_NO_MD5`.
+      Disabled by default since OpenSSH 7.2 (2016-02-29).
+  - 3DES cipher: `3des-cbc`
+      You can disable it now with `-DLIBSSH2_NO_3DES`.
+      Disabled by default since OpenSSH 7.4 (2016-12-19).
+  - RIPEMD-160 MACs: `hmac-ripemd160`, `hmac-ripemd160@openssh.com`
+      You can disable it now with `-DLIBSSH2_NO_HMAC_RIPEMD`.
+      Removed in OpenSSH 7.6 (2017-10-03).
+  - Blowfish cipher: `blowfish-cbc`
+      You can disable it now with `-DLIBSSH2_NO_BLOWFISH`.
+      Removed in OpenSSH 7.6 (2017-10-03).
+  - RC4 ciphers: `arcfour`, `arcfour128`
+      You can disable it now with `-DLIBSSH2_NO_RC4`.
+      Removed in OpenSSH 7.6 (2017-10-03).
+  - CAST cipher: `cast128-cbc`
+      You can disable it now with `-DLIBSSH2_NO_CAST`.
+      Removed in OpenSSH 7.6 (2017-10-03).
+
+- Starting January 2025, above options will be deleted from the
+  libssh2 codebase.
+
+  - Default builds will also disable support for old-style, MD5-based
+    encrypted private keys.
+    You can disable it now with `-DLIBSSH2_NO_MD5_PEM`.
+
 This release includes the following enhancements and bugfixes:
 
 - autotools: delete `--disable-tests` option, fix CI tests (e051ae34 #1271 revert: 7483edfa)
@@ -126,6 +161,7 @@ This release includes the following enhancements and bugfixes:
 - openssl: silence `-Wunused-value` warnings (bf285500 #1205)
 - openssl: use automatic initialization with LibreSSL 2.7.0+ (d79047c9 #1146)
 - openssl: add missing check for `LIBRESSL_VERSION_NUMBER` before use (4a42f42e #1117 #1115)
+- os400: maintain up to date (8457c37a #1309)
 - packet: properly bounds check packet_authagent_open() (88a960a8 #1179)
 - pem: fix private keys encrypted with AES-GCM methods (e87bdefa #1133)
 - reuse: fix duplicate copyright warning (b9a4ed83)
@@ -169,6 +205,7 @@ This release includes the following enhancements and bugfixes:
 - wincng: prefer `ULONG`/`DWORD` over `unsigned long` (186c1d63 #1165)
 - wincng: tidy-ups (7bb669b5 #1164)
 - windows: use built-in `_WIN32` macro to detect Windows (6fbc9505 #1195)
+- wolfssl: enable debug logging in wolfSSL when compiled in (76e7a68a #1310)
 
 This release would not have looked like this without help, code, reports and
 advice from friends like these:
@@ -176,6 +213,7 @@ advice from friends like these:
   Viktor Szakats, Michael Buckley, Ren Mingshuai, Daniel Stenberg,
   Patrick Monnerat, Aaron Stone, Brian Inglis, concussious on GitHub,
   Dan Fandrich, Haowei Hsu, Harmen Stoppels, Harry Mallon, Jack L, Jakob Egger,
-  João M. S. Silva, Joel Depooter, Kai Pastor, Kenneth Davidson, mike-jumper,
-  naddy, Nicolas Mora, Nursan Valeyev, Paul Howarth, PewPewPew, Radek Brich,
-  rahmanih on GitHub, Ryan Kelley, Steve McIntyre, Will Cosgrove, Xi Ruoyao
+  João M. S. Silva, Joel Depooter, Juliusz Sosinowicz, Kai Pastor,
+  Kenneth Davidson, mike-jumper, monnerat, naddy, Nicolas Mora, Nursan Valeyev,
+  Paul Howarth, PewPewPew, Radek Brich, rahmanih on GitHub, Ryan Kelley,
+  Steve McIntyre, Will Cosgrove, Xi Ruoyao
