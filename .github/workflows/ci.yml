@@ -205,7 +205,7 @@ jobs:
       - name: 'autotools tests'
         if: ${{ matrix.build == 'autotools' && !matrix.target }}
         timeout-minutes: 10
-        run: make -C bld check VERBOSE=1
+        run: make -C bld check V=1
       - name: 'autotools distcheck'
         if: ${{ matrix.target == 'distcheck' }}
         timeout-minutes: 10
@@ -331,7 +331,7 @@ jobs:
             --with-crypto=openssl \
             --disable-docker-tests
           make -j3
-          make check VERBOSE=1
+          make check V=1
 
       - name: 'cmake'
         if: ${{ matrix.build == 'cmake' }}
@@ -415,7 +415,7 @@ jobs:
         if: ${{ matrix.build == 'autotools' }}
         timeout-minutes: 10
         shell: msys2 {0}
-        run: make -C bld check VERBOSE=1
+        run: make -C bld check V=1
       - name: 'cmake configure'
         if: ${{ matrix.build == 'cmake' }}
         shell: msys2 {0}
@@ -526,31 +526,31 @@ jobs:
         crypto:
           - name: 'OpenSSL 3'
             install: openssl
-            configure: --with-crypto=openssl --with-libssl-prefix=/usr/local/opt/openssl
-            cmake: -DCRYPTO_BACKEND=OpenSSL -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl
+            configure: --with-crypto=openssl "--with-libssl-prefix=$(brew --prefix)/opt/openssl"
+            cmake: -DCRYPTO_BACKEND=OpenSSL "-DOPENSSL_ROOT_DIR=$(brew --prefix)/opt/openssl"
           - name: 'OpenSSL 1.1'
             install: openssl@1.1
-            configure: --with-crypto=openssl --with-libssl-prefix=/usr/local/opt/openssl@1.1
-            cmake: -DCRYPTO_BACKEND=OpenSSL -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl@1.1
+            configure: --with-crypto=openssl "--with-libssl-prefix=$(brew --prefix)/opt/openssl@1.1"
+            cmake: -DCRYPTO_BACKEND=OpenSSL "-DOPENSSL_ROOT_DIR=$(brew --prefix)/opt/openssl@1.1"
           - name: 'LibreSSL'
             install: libressl
-            configure: --with-crypto=openssl --with-libssl-prefix=/usr/local/opt/libressl
-            cmake: -DCRYPTO_BACKEND=OpenSSL -DOPENSSL_ROOT_DIR=/usr/local/opt/libressl
+            configure: --with-crypto=openssl "--with-libssl-prefix=$(brew --prefix)/opt/libressl"
+            cmake: -DCRYPTO_BACKEND=OpenSSL "-DOPENSSL_ROOT_DIR=$(brew --prefix)/opt/libressl"
           - name: 'wolfSSL'
             install: wolfssl
-            configure: --with-crypto=wolfssl --with-libwolfssl-prefix=/usr/local/opt/wolfssl
+            configure: --with-crypto=wolfssl "--with-libwolfssl-prefix=$(brew --prefix)/opt/wolfssl"
             cmake: -DCRYPTO_BACKEND=wolfSSL
           - name: 'libgcrypt'
             install: libgcrypt
-            configure: --with-crypto=libgcrypt --with-libgcrypt-prefix=/usr/local/opt/libgcrypt
+            configure: --with-crypto=libgcrypt "--with-libgcrypt-prefix=$(brew --prefix)"
             cmake: -DCRYPTO_BACKEND=Libgcrypt
           - name: 'mbedTLS'
             install: mbedtls
-            configure: --with-crypto=mbedtls --with-libmbedcrypto-prefix=/usr/local/opt/mbedtls
-            cmake: -DCRYPTO_BACKEND=mbedTLS -DMBEDTLS_INCLUDE_DIR=/usr/local/opt/mbedtls/include -DMBEDCRYPTO_LIBRARY=/usr/local/opt/mbedtls/lib/libmbedcrypto.a
+            configure: --with-crypto=mbedtls "--with-libmbedcrypto-prefix=$(brew --prefix)/opt/mbedtls"
+            cmake: -DCRYPTO_BACKEND=mbedTLS "-DMBEDTLS_INCLUDE_DIR=$(brew --prefix)/opt/mbedtls/include" "-DMBEDCRYPTO_LIBRARY=$(brew --prefix)/opt/mbedtls/lib/libmbedcrypto.a"
     steps:
       - name: 'install packages'
-        run: brew install automake ${{ matrix.crypto.install }}
+        run: brew install automake libtool ${{ matrix.crypto.install }}
       - uses: actions/checkout@v4
       - name: 'autotools autoreconf'
         if: ${{ matrix.build == 'autotools' }}
@@ -561,15 +561,16 @@ jobs:
           mkdir bld && cd bld && ../configure --enable-werror --enable-debug \
             --with-libz ${{ matrix.crypto.configure }} \
             --disable-docker-tests \
-            --disable-sshd-tests
+            --disable-sshd-tests \
+            || { tail -n 1000 config.log; false; }
 
       - name: 'autotools build'
         if: ${{ matrix.build == 'autotools' }}
-        run: make -C bld -j3
+        run: make -C bld -j3 V=1
       - name: 'autotools tests'
         if: ${{ matrix.build == 'autotools' }}
         timeout-minutes: 10
-        run: make -C bld check VERBOSE=1
+        run: make -C bld check V=1
       - name: 'cmake configure'
         if: ${{ matrix.build == 'cmake' }}
         run: |
@@ -665,7 +666,7 @@ jobs:
               --with-crypto=openssl \
               --disable-docker-tests
             make -j3
-            make check VERBOSE=1
+            make check V=1
 
   build_omnios:
     name: 'OmniOS (autotools, openssl, gcc, amd64)'
@@ -685,4 +686,4 @@ jobs:
               --with-crypto=openssl \
               --disable-docker-tests
             gmake -j3
-            gmake check VERBOSE=1
+            gmake check V=1
