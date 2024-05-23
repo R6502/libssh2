@@ -426,7 +426,7 @@ jobs:
             options='-DCMAKE_C_COMPILER=gcc'
           fi
           if [ '${{ matrix.test }}' = 'uwp' ]; then
-            options="${options} -DCMAKE_SYSTEM_NAME=WindowsStore -DCMAKE_SYSTEM_VERSION=10.0"
+            options+=' -DCMAKE_SYSTEM_NAME=WindowsStore -DCMAKE_SYSTEM_VERSION=10.0'
             pacman --noconfirm --ask 20 --noprogressbar --sync --needed 'mingw-w64-${{ matrix.env }}-winstorecompat-git'
             specs="$(realpath gcc-specs-uwp)"
             gcc -dumpspecs | sed -e 's/-lmingwex/-lwindowsapp -lmingwex -lwindowsapp -lwindowsappcompat/' -e 's/-lmsvcrt/-lmsvcr120_app/' > "${specs}"
@@ -435,7 +435,7 @@ jobs:
             # template to windres. Reset it to the windres template manually:
             rcopts='<CMAKE_RC_COMPILER> -O coff <DEFINES> <INCLUDES> <FLAGS> <SOURCE> <OBJECT>'
           elif [ '${{ matrix.test }}' = 'no-options' ]; then
-            options="${options} -DLIBSSH2_NO_DEPRECATED=ON"
+            options+=' -DLIBSSH2_NO_DEPRECATED=ON'
             cflags='-DLIBSSH2_NO_MD5 -DLIBSSH2_NO_MD5_PEM -DLIBSSH2_NO_HMAC_RIPEMD -DLIBSSH2_NO_DSA -DLIBSSH2_NO_AES_CBC -DLIBSSH2_NO_AES_CTR -DLIBSSH2_NO_BLOWFISH -DLIBSSH2_NO_RC4 -DLIBSSH2_NO_CAST -DLIBSSH2_NO_3DES'
           else
             cflags=''
@@ -538,7 +538,7 @@ jobs:
             cmake: -DCRYPTO_BACKEND=OpenSSL "-DOPENSSL_ROOT_DIR=$(brew --prefix)/opt/libressl"
           - name: 'wolfSSL'
             install: wolfssl
-            configure: --with-crypto=wolfssl "--with-libwolfssl-prefix=$(brew --prefix)/opt/wolfssl"
+            configure: --with-crypto=wolfssl "--with-libwolfssl-prefix=$(brew --prefix)"
             cmake: -DCRYPTO_BACKEND=wolfSSL
           - name: 'libgcrypt'
             install: libgcrypt
@@ -556,18 +556,9 @@ jobs:
         if: ${{ matrix.build == 'autotools' }}
         run: autoreconf -fi
       - name: 'autotools configure'
-        if: ${{ matrix.build == 'autotools' && matrix.crypto.name != 'mbedTLS' }}
+        if: ${{ matrix.build == 'autotools' }}
         run: |
           mkdir bld && cd bld && ../configure --enable-werror --enable-debug \
-            --with-libz ${{ matrix.crypto.configure }} \
-            --disable-docker-tests \
-            --disable-sshd-tests \
-            || { tail -n 1000 config.log; false; }
-      - name: 'autoconf configure mbedTLS'
-        if: ${{ matrix.build == 'autotools' && matrix.crypto.name == 'mbedTLS' }}
-        run: |
-          mkdir bld && cd bld && LDFLAGS="-L/opt/homebrew/lib" \
-            ../configure --enable-werror --enable-debug \
             --with-libz ${{ matrix.crypto.configure }} \
             --disable-docker-tests \
             --disable-sshd-tests \
@@ -600,17 +591,20 @@ jobs:
         run: cd bld && ctest -VV --output-on-failure
 
   build_netbsd:
-    name: 'NetBSD (cmake, openssl, clang, amd64)'
+    name: 'NetBSD (cmake, openssl, clang)'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      matrix:
+        arch: ['x86_64', 'arm64']
     steps:
       - uses: actions/checkout@v4
       - name: 'cmake'
-        uses: cross-platform-actions/action@v0.23.0
+        uses: cross-platform-actions/action@v0.24.0
         with:
           operating_system: 'netbsd'
-          version: '9.3'
-          architecture: 'x86_64'
+          version: '10.0'
+          architecture: ${{ matrix.arch }}
           run: |
             # https://pkgsrc.se/
             sudo pkgin -y install cmake
@@ -625,17 +619,20 @@ jobs:
             cmake --build bld --parallel 3
 
   build_openbsd:
-    name: 'OpenBSD (cmake, libressl, clang, amd64)'
+    name: 'OpenBSD (cmake, libressl, clang)'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      matrix:
+        arch: ['x86_64']
     steps:
       - uses: actions/checkout@v4
       - name: 'cmake'
-        uses: cross-platform-actions/action@v0.23.0
+        uses: cross-platform-actions/action@v0.24.0
         with:
           operating_system: 'openbsd'
-          version: '7.4'
-          architecture: 'x86_64'
+          version: '7.5'
+          architecture: ${{ matrix.arch }}
           run: |
             # https://openbsd.app/
             sudo pkg_add cmake
@@ -657,11 +654,11 @@ jobs:
       CC: clang
     strategy:
       matrix:
-        arch: [x86-64, arm64]
+        arch: ['x86_64', 'arm64']
     steps:
       - uses: actions/checkout@v4
       - name: 'autotools'
-        uses: cross-platform-actions/action@v0.23.0
+        uses: cross-platform-actions/action@v0.24.0
         with:
           operating_system: 'freebsd'
           version: '14.0'
