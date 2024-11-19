@@ -2,21 +2,21 @@
 # SPDX-License-Identifier: BSD-3-Clause
 #
 ###########################################################################
-# Find the libgcrypt library
+# Find the Libgcrypt library
 #
 # Input variables:
 #
-# LIBGCRYPT_INCLUDE_DIR   The libgcrypt include directory
-# LIBGCRYPT_LIBRARY       Path to libgcrypt library
+# - `LIBGCRYPT_INCLUDE_DIR`:   The Libgcrypt include directory.
+# - `LIBGCRYPT_LIBRARY`:       Path to `libgcrypt` library.
 #
 # Result variables:
 #
-# LIBGCRYPT_FOUND         System has libgcrypt
-# LIBGCRYPT_INCLUDE_DIRS  The libgcrypt include directories
-# LIBGCRYPT_LIBRARIES     The libgcrypt library names
-# LIBGCRYPT_LIBRARY_DIRS  The libgcrypt library directories
-# LIBGCRYPT_CFLAGS        Required compiler flags
-# LIBGCRYPT_VERSION       Version of libgcrypt
+# - `LIBGCRYPT_FOUND`:         System has Libgcrypt.
+# - `LIBGCRYPT_INCLUDE_DIRS`:  The Libgcrypt include directories.
+# - `LIBGCRYPT_LIBRARIES`:     The Libgcrypt library names.
+# - `LIBGCRYPT_LIBRARY_DIRS`:  The Libgcrypt library directories.
+# - `LIBGCRYPT_CFLAGS`:        Required compiler flags.
+# - `LIBGCRYPT_VERSION`:       Version of Libgcrypt.
 
 if((UNIX OR VCPKG_TOOLCHAIN OR (MINGW AND NOT CMAKE_CROSSCOMPILING)) AND
    NOT DEFINED LIBGCRYPT_INCLUDE_DIR AND
@@ -32,6 +32,7 @@ else()
   find_path(LIBGCRYPT_INCLUDE_DIR NAMES "gcrypt.h")
   find_library(LIBGCRYPT_LIBRARY NAMES "gcrypt" "libgcrypt")
 
+  unset(LIBGCRYPT_VERSION CACHE)
   if(LIBGCRYPT_INCLUDE_DIR AND EXISTS "${LIBGCRYPT_INCLUDE_DIR}/gcrypt.h")
     set(_version_regex "#[\t ]*define[\t ]+GCRYPT_VERSION[\t ]+\"([^\"]*)\"")
     file(STRINGS "${LIBGCRYPT_INCLUDE_DIR}/gcrypt.h" _version_str REGEX "${_version_regex}")
