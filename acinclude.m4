@@ -838,7 +838,7 @@ AC_DEFUN([LIBSSH2_LIB_HAVE_LINKFLAGS], [
   libssh2_save_CPPFLAGS="$CPPFLAGS"
   libssh2_save_LDFLAGS="$LDFLAGS"
 
-  if test "${with_lib$1_prefix+set}" = set; then
+  if test "${with_lib$1_prefix+set}" = set -a "${with_lib$1_prefix}" != 'no'; then
     CPPFLAGS="$CPPFLAGS${CPPFLAGS:+ }-I${with_lib$1_prefix}/include"
     LDFLAGS="$LDFLAGS${LDFLAGS:+ }-L${with_lib$1_prefix}/lib"
   fi
@@ -884,7 +884,6 @@ m4_case([$1],
 [mbedtls], [
   LIBSSH2_LIB_HAVE_LINKFLAGS([mbedcrypto], [], [#include <mbedtls/version.h>], [
     AC_DEFINE(LIBSSH2_MBEDTLS, 1, [Use $1])
-    LIBS="$LIBS -lmbedcrypto"
     found_crypto="$1"
   ])
 ],
