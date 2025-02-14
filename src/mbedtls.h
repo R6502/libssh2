@@ -41,14 +41,14 @@
 
 #define LIBSSH2_CRYPTO_ENGINE libssh2_mbedtls
 
-#ifdef __GNUC__
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic push
 /* mbedTLS (as of v3.5.1) has a `[-Werror=arith-conversion]`
    warning in its public headers. */
 #if !defined(__clang__) && __GNUC__ >= 10
 #pragma GCC diagnostic ignored "-Warith-conversion"
 #endif
-#if defined(__clang__)
+#ifdef __clang__
 #pragma GCC diagnostic ignored "-Wsign-conversion"
 #endif
 /* mbedTLS (as of v3.5.1) has a duplicate function declaration
@@ -73,7 +73,7 @@
 #include <mbedtls/pk.h>
 #include <mbedtls/error.h>
 
-#ifdef __GNUC__
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
 

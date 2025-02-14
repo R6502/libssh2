@@ -45,7 +45,7 @@
 
 /* FIXME: Disable warnings for 'src' */
 #if !defined(LIBSSH2_TESTS) && !defined(LIBSSH2_WARN_SIGN_CONVERSION)
-#ifdef __GNUC__
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic ignored "-Wsign-conversion"
 #endif
 #endif
@@ -117,6 +117,14 @@
 #define UINT32_MAX 0xffffffffU
 #endif
 
+#ifdef _WIN64
+#define LIBSSH2_UNCONST(p)  ((void *)(libssh2_uint64_t)(const void *)(p))
+#elif defined(_MSC_VER)
+#define LIBSSH2_UNCONST(p)  ((void *)(unsigned int)(const void *)(p))
+#else
+#define LIBSSH2_UNCONST(p)  ((void *)(uintptr_t)(const void *)(p))
+#endif
+
 #if (defined(__GNUC__) || defined(__clang__)) && \
     defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L) && \
     !defined(LIBSSH2_NO_FMT_CHECKS)
@@ -133,7 +141,7 @@
 #endif
 
 /* Use local implementation when not available */
-#if !defined(HAVE_SNPRINTF)
+#ifndef HAVE_SNPRINTF
 #undef snprintf
 #define snprintf _libssh2_snprintf
 #define LIBSSH2_SNPRINTF
@@ -141,7 +149,7 @@ int _libssh2_snprintf(char *cp, size_t cp_max_len, const char *fmt, ...)
     LIBSSH2_PRINTF(3, 4);
 #endif
 
-#if !defined(HAVE_GETTIMEOFDAY)
+#ifndef HAVE_GETTIMEOFDAY
 #define HAVE_GETTIMEOFDAY
 #undef gettimeofday
 #define gettimeofday _libssh2_gettimeofday
@@ -151,7 +159,7 @@ int _libssh2_gettimeofday(struct timeval *tp, void *tzp);
 #include <sys/time.h>
 #endif
 
-#if !defined(LIBSSH2_FALLTHROUGH)
+#ifndef LIBSSH2_FALLTHROUGH
 #if (defined(__GNUC__) && __GNUC__ >= 7) || \
     (defined(__clang__) && __clang_major__ >= 10)
 #  define LIBSSH2_FALLTHROUGH()  __attribute__((fallthrough))
@@ -1247,10 +1255,10 @@ size_t plain_method(char *method, size_t method_len);
 #define ARRAY_SIZE(a) (sizeof ((a)) / sizeof ((a)[0]))
 
 /* define to output the libssh2_int64_t type in a *printf() */
-#if defined(__BORLANDC__) || defined(_MSC_VER)
-#define LIBSSH2_INT64_T_FORMAT "I64d"
-#elif defined(__MINGW32__)
+#if defined(__MINGW32__) || (defined(_MSC_VER) && (_MSC_VER >= 1800))
 #define LIBSSH2_INT64_T_FORMAT PRId64
+#elif defined(_WIN32)
+#define LIBSSH2_INT64_T_FORMAT "I64d"
 #else
 #define LIBSSH2_INT64_T_FORMAT "lld"
 #endif
