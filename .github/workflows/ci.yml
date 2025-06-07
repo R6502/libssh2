@@ -53,38 +53,91 @@ jobs:
     name: 'integration on ${{ matrix.image }}'
     runs-on: ${{ matrix.image }}
     timeout-minutes: 5
+    defaults:
+      run:
+        shell: ${{ contains(matrix.image, 'windows') && 'msys2 {0}' || 'bash' }}
     env:
-      CC: clang
-      CMAKE_GENERATOR: Ninja
+      CC: ${{ !contains(matrix.image, 'windows') && 'clang' || '' }}
+      old-cmake-version: 3.11.4
     strategy:
       fail-fast: false
       matrix:
-        image: [ubuntu-latest, macos-latest]
+        image: [ubuntu-latest, macos-latest, windows-latest]
     steps:
+      - uses: msys2/setup-msys2@d44ca8e88d8b43d56cf5670f91747359d5537f97 # v2
+        if: ${{ contains(matrix.image, 'windows') }}
+        with:
+          msystem: mingw64
+          release: false
+          update: false
+          cache: false
+          path-type: inherit
+          install: >-
+            mingw-w64-x86_64-zlib mingw-w64-x86_64-libgcrypt mingw-w64-x86_64-openssl mingw-w64-x86_64-mbedtls
+
       - name: 'install packages'
         run: |
-          if [[ '${{ matrix.image }}' = *'ubuntu'* ]]; then
+          if [[ '${{ matrix.image }}' = *'windows'* ]]; then
+            cd "${HOME}" || exit 1
+            curl --disable --fail --silent --show-error --connect-timeout 15 --max-time 60 --retry 3 --retry-connrefused \
+              --location 'https://github.com/Kitware/CMake/releases/download/v${{ env.old-cmake-version }}/cmake-${{ env.old-cmake-version }}-win64-x64.zip' --output bin.zip
+            unzip -q bin.zip
+            rm -f bin.zip
+            printf '%s' "${HOME}/cmake-${{ env.old-cmake-version }}-win64-x64/bin/cmake.exe" > "${HOME}/old-cmake-path.txt"
+          elif [[ '${{ matrix.image }}' = *'ubuntu'* ]]; then
             sudo rm -f /var/lib/man-db/auto-update
             sudo apt-get -o Dpkg::Use-Pty=0 install libgcrypt-dev libssl-dev libmbedtls-dev libwolfssl-dev
+            cd "${HOME}" || exit 1
+            curl --disable --fail --silent --show-error --connect-timeout 15 --max-time 60 --retry 3 --retry-connrefused \
+              --location https://github.com/Kitware/CMake/releases/download/v${{ env.old-cmake-version }}/cmake-${{ env.old-cmake-version }}-Linux-x86_64.tar.gz | tar -xzf -
+            printf '%s' "$PWD/cmake-${{ env.old-cmake-version }}-Linux-x86_64/bin/cmake" > "${HOME}/old-cmake-path.txt"
           else
             brew install libgcrypt openssl mbedtls wolfssl
+            cd "${HOME}" || exit 1
+            curl --disable --fail --silent --show-error --connect-timeout 15 --max-time 60 --retry 3 --retry-connrefused \
+              --location https://github.com/Kitware/CMake/releases/download/v${{ env.old-cmake-version }}/cmake-${{ env.old-cmake-version }}-Darwin-x86_64.tar.gz | tar -xzf -
+            printf '%s' "$PWD/cmake-${{ env.old-cmake-version }}-Darwin-x86_64/CMake.app/Contents/bin/cmake" > "${HOME}/old-cmake-path.txt"
           fi
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           persist-credentials: false
+
       - name: 'via FetchContent'
         run: ./tests/cmake/test.sh FetchContent
-      - name: 'via add_subdirectory'
-        run: ./tests/cmake/test.sh add_subdirectory
+      - name: 'via add_subdirectory OpenSSL'
+        run: ./tests/cmake/test.sh add_subdirectory -DCRYPTO_BACKEND=OpenSSL
+      - name: 'via add_subdirectory Libgcrypt'
+        run: ./tests/cmake/test.sh add_subdirectory -DCRYPTO_BACKEND=Libgcrypt
       - name: 'via find_package OpenSSL'
-        run: ./tests/cmake/test.sh find_package OpenSSL
+        run: ./tests/cmake/test.sh find_package -DCRYPTO_BACKEND=OpenSSL
       - name: 'via find_package Libgcrypt'
-        run: ./tests/cmake/test.sh find_package Libgcrypt
+        run: ./tests/cmake/test.sh find_package -DCRYPTO_BACKEND=Libgcrypt
       - name: 'via find_package mbedTLS'
-        run: ./tests/cmake/test.sh find_package mbedTLS
+        run: ./tests/cmake/test.sh find_package -DCRYPTO_BACKEND=mbedTLS
       - name: 'via find_package wolfSSL'
-        run: ./tests/cmake/test.sh find_package wolfSSL
+        if: ${{ !contains(matrix.image, 'windows') }}  # MSYS2 wolfSSL package not built with the OpenSSL compatibility option
+        run: ./tests/cmake/test.sh find_package -DCRYPTO_BACKEND=wolfSSL
+
+      - name: 'via add_subdirectory OpenSSL (old cmake)'
+        run: |
+          export TEST_CMAKE_CONSUMER="$(cat "${HOME}/old-cmake-path.txt")"
+          [[ '${{ matrix.image }}' = *'macos'* ]] && export CFLAGS='-arch arm64'
+          if [[ '${{ matrix.image }}' = *'windows'* ]]; then
+            export TEST_CMAKE_GENERATOR='MSYS Makefiles'
+            export TEST_CMAKE_FLAGS='-DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc -DOPENSSL_ROOT_DIR=C:/msys64/mingw64'
+          fi
+          ./tests/cmake/test.sh add_subdirectory -DCRYPTO_BACKEND=OpenSSL ${options}
+
+      - name: 'via find_package OpenSSL (old cmake)'
+        run: |
+          export TEST_CMAKE_CONSUMER="$(cat "${HOME}/old-cmake-path.txt")"
+          [[ '${{ matrix.image }}' = *'macos'* ]] && export CFLAGS='-arch arm64'
+          if [[ '${{ matrix.image }}' = *'windows'* ]]; then
+            export TEST_CMAKE_GENERATOR='MSYS Makefiles'
+            export TEST_CMAKE_FLAGS='-DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc -DOPENSSL_ROOT_DIR=C:/msys64/mingw64'
+          fi
+          ./tests/cmake/test.sh find_package -DCRYPTO_BACKEND=OpenSSL ${options}
 
   build_linux:
     name: 'linux'
@@ -240,8 +293,6 @@ jobs:
             cmake --install .
             cd ..
           fi
-          echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/usr/lib" >> $GITHUB_ENV
-          echo "TOOLCHAIN_OPTION=$TOOLCHAIN_OPTION -DCMAKE_PREFIX_PATH=$HOME/usr" >> $GITHUB_ENV
 
       - name: 'install wolfSSL from source'
         if: ${{ startsWith(matrix.crypto, 'wolfSSL-from-source') }}
@@ -266,8 +317,6 @@ jobs:
           cmake --build bld --parallel 5
           cmake --install bld
           cd ..
-          echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/usr/lib" >> $GITHUB_ENV
-          echo "TOOLCHAIN_OPTION=$TOOLCHAIN_OPTION -DCMAKE_PREFIX_PATH=$HOME/usr" >> $GITHUB_ENV
 
       - name: 'cache BoringSSL'
         if: ${{ matrix.crypto == 'BoringSSL' }}
@@ -294,8 +343,6 @@ jobs:
             cmake --install .
             cd ..
           fi
-          echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/usr/lib" >> $GITHUB_ENV
-          echo "TOOLCHAIN_OPTION=$TOOLCHAIN_OPTION -DCMAKE_PREFIX_PATH=$HOME/usr" >> $GITHUB_ENV
 
       - name: 'cache AWS-LC'
         if: ${{ matrix.crypto == 'AWS-LC' }}
@@ -317,8 +364,6 @@ jobs:
             cmake --install .
             cd ..
           fi
-          echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/usr/lib" >> $GITHUB_ENV
-          echo "TOOLCHAIN_OPTION=$TOOLCHAIN_OPTION -DCMAKE_PREFIX_PATH=$HOME/usr" >> $GITHUB_ENV
 
       - name: 'cache LibreSSL'
         if: ${{ matrix.crypto == 'LibreSSL' }}
@@ -342,8 +387,6 @@ jobs:
             cmake --install .
             cd ..
           fi
-          echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/usr/lib" >> $GITHUB_ENV
-          echo "TOOLCHAIN_OPTION=$TOOLCHAIN_OPTION -DCMAKE_PREFIX_PATH=$HOME/usr" >> $GITHUB_ENV
 
       - name: 'cache OpenSSL'
         if: ${{ matrix.crypto == 'OpenSSL-3-no-deprecated' }}
@@ -365,8 +408,6 @@ jobs:
             make -j5 install_sw
             cd ..
           fi
-          echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/usr/lib" >> $GITHUB_ENV
-          echo "TOOLCHAIN_OPTION=$TOOLCHAIN_OPTION -DCMAKE_PREFIX_PATH=$HOME/usr" >> $GITHUB_ENV
 
       - name: 'cache OpenSSL 1.1.1'
         if: ${{ matrix.crypto == 'OpenSSL-111-from-source' }}
@@ -387,8 +428,6 @@ jobs:
             make -j1 install_sw
             cd ..
           fi
-          echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/usr/lib" >> $GITHUB_ENV
-          echo "TOOLCHAIN_OPTION=$TOOLCHAIN_OPTION -DCMAKE_PREFIX_PATH=$HOME/usr" >> $GITHUB_ENV
 
       - name: 'cache OpenSSL 1.1.0'
         if: ${{ matrix.crypto == 'OpenSSL-110-from-source' }}
@@ -409,8 +448,6 @@ jobs:
             make -j1 install_sw
             cd ..
           fi
-          echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/usr/lib" >> $GITHUB_ENV
-          echo "TOOLCHAIN_OPTION=$TOOLCHAIN_OPTION -DCMAKE_PREFIX_PATH=$HOME/usr" >> $GITHUB_ENV
 
       - name: 'cache OpenSSL 1.0.2'
         if: ${{ matrix.crypto == 'OpenSSL-102-from-source' }}
@@ -431,8 +468,6 @@ jobs:
             make -j1 install_sw
             cd ..
           fi
-          echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/usr/lib" >> $GITHUB_ENV
-          echo "TOOLCHAIN_OPTION=$TOOLCHAIN_OPTION -DCMAKE_PREFIX_PATH=$HOME/usr" >> $GITHUB_ENV
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
@@ -503,8 +538,9 @@ jobs:
           else
             crypto='${{ matrix.crypto }}'
           fi
-          [ '${{ matrix.arch }}' = 'i386' ] && crossoptions='-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_VERSION=1 -DCMAKE_SYSTEM_PROCESSOR=${{ matrix.arch }} -DCMAKE_C_FLAGS=-m32'
-          cmake -B bld -G Ninja ${crossoptions} $TOOLCHAIN_OPTION \
+          [ -d "$HOME/usr" ] && options+=" -DCMAKE_PREFIX_PATH=$HOME/usr"
+          [ '${{ matrix.arch }}' = 'i386' ] && options+=' -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_VERSION=1 -DCMAKE_SYSTEM_PROCESSOR=${{ matrix.arch }} -DCMAKE_C_FLAGS=-m32'
+          cmake -B bld -G Ninja ${options} $TOOLCHAIN_OPTION \
             -DCMAKE_UNITY_BUILD=ON \
             -DENABLE_WERROR=ON \
             -DCRYPTO_BACKEND=${crypto} \
@@ -520,6 +556,7 @@ jobs:
         timeout-minutes: 10
         run: |
           export OPENSSH_SERVER_IMAGE=ghcr.io/libssh2/ci_tests_openssh_server:$(git rev-parse --short=20 HEAD:tests/openssh_server)
+          [ -d "$HOME/usr" ] && export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$HOME/usr/lib"
           cd bld && ctest -VV --output-on-failure
 
   build_linux_cross_mingw64:
