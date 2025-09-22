@@ -51,8 +51,8 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
   find_program(GCOV_PATH "gcov")
   if(GCOV_PATH)
     set(_gcov_cflags "-g" "--coverage")
-    if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 8.0)
-      string(APPEND _gcov_cflags " -fprofile-abs-path")
+    if(CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 8.0)
+      list(APPEND _gcov_cflags "-fprofile-abs-path")
     endif()
   endif()
 endif()
@@ -167,8 +167,13 @@ add_custom_target(coverage
   COMMAND gcovr --root "${PROJECT_SOURCE_DIR}" --exclude tests/* --html-details
     --output "${CMAKE_CURRENT_BINARY_DIR}/coverage/index.html")
 
-add_custom_target(clean-coverage
-  COMMAND rm -rf "${CMAKE_CURRENT_BINARY_DIR}/coverage")
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.17)
+  add_custom_target(clean-coverage COMMAND ${CMAKE_COMMAND} -E rm -rf --
+    "${CMAKE_CURRENT_BINARY_DIR}/coverage")
+else()
+  add_custom_target(clean-coverage COMMAND ${CMAKE_COMMAND} -E remove_directory
+    "${CMAKE_CURRENT_BINARY_DIR}/coverage")
+endif()
 
 libssh2_add_target_to_copy_dependencies(
   TARGET copy_test_dependencies
