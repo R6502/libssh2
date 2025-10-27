@@ -3,6 +3,8 @@
 
 include(CheckCCompilerFlag)
 
+set(LIBSSH2_PICKY_C_FLAGS "")
+
 set(_picky "")
 set(_picky_nocheck "")  # not to pass to feature checks
 
@@ -12,12 +14,10 @@ option(PICKY_COMPILER "Enable picky compiler options" ON)
 if(ENABLE_WERROR)
   if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.24)
     set(CMAKE_COMPILE_WARNING_AS_ERROR ON)
-  else()
-    if(MSVC)
-      list(APPEND _picky_nocheck "-WX")
-    else()  # llvm/clang and gcc style options
-      list(APPEND _picky_nocheck "-Werror")
-    endif()
+  elseif(MSVC)
+    list(APPEND _picky_nocheck "-WX")
+  else()  # llvm/clang and gcc-style options
+    list(APPEND _picky_nocheck "-Werror")
   endif()
 
   if((CMAKE_C_COMPILER_ID STREQUAL "GNU" AND
@@ -249,7 +249,7 @@ if(PICKY_COMPILER)
         list(APPEND _picky "${_ccopt}")
       endif()
     endforeach()
-  elseif(MSVC AND MSVC_VERSION LESS_EQUAL 1943)  # Skip for untested/unreleased newer versions
+  elseif(MSVC AND MSVC_VERSION LESS_EQUAL 1944)  # Skip for untested/unreleased newer versions
     list(APPEND _picky "-Wall")
     list(APPEND _picky "-wd4061")  # enumerator 'A' in switch of enum 'B' is not explicitly handled by a case label
     list(APPEND _picky "-wd4191")  # 'type cast': unsafe conversion from 'FARPROC' to 'void (__cdecl *)(void)'
@@ -294,7 +294,7 @@ if(_picky_nocheck OR _picky)
   string(REPLACE ";" " " _picky_tmp "${_picky_tmp}")
   string(STRIP "${_picky_tmp}" _picky_tmp)
   message(STATUS "Picky compiler options: ${_picky_tmp}")
-  set_property(DIRECTORY APPEND PROPERTY COMPILE_OPTIONS "${_picky_nocheck}" "${_picky}")
+  set(LIBSSH2_PICKY_C_FLAGS "${_picky_nocheck}" "${_picky}")
 
   # Apply to all feature checks
   string(REPLACE ";" " " _picky_tmp "${_picky}")

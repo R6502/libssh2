@@ -7,4 +7,29 @@ updates:
   - package-ecosystem: 'github-actions'
     directory: '/'
     schedule:
-      interval: 'weekly'
+      interval: 'monthly'
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: 'GHA:'
+
+  - package-ecosystem: 'pip'
+    directory: '/.github/workflows'
+    schedule:
+      interval: 'monthly'
+    cooldown:
+      default-days: 7
+      semver-major-days: 15
+      semver-minor-days: 7
+      semver-patch-days: 3
+    commit-message:
+      prefix: 'GHA:'
+
+  - package-ecosystem: 'docker'
+    directory: '/tests/openssh_server'
+    schedule:
+      interval: 'monthly'
+    cooldown:
+      default-days: 15
+    commit-message:
+      prefix: 'GHA:'

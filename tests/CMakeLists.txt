@@ -66,8 +66,6 @@ if(SH_EXECUTABLE)
     find_program(SSHD_EXECUTABLE "sshd")
     mark_as_advanced(SSHD_EXECUTABLE)
   endif()
-
-  add_test(NAME mansyntax COMMAND ${SH_EXECUTABLE} -c "${CMAKE_CURRENT_SOURCE_DIR}/mansyntax.sh")
 endif()
 
 add_library(runner STATIC ${librunner_la_SOURCES})
@@ -76,6 +74,7 @@ target_include_directories(runner PRIVATE
   "${PROJECT_BINARY_DIR}/src"
   "${PROJECT_SOURCE_DIR}/src"
   "${PROJECT_SOURCE_DIR}/include")
+set_property(TARGET runner APPEND PROPERTY COMPILE_OPTIONS "${LIBSSH2_PICKY_C_FLAGS}")
 target_link_libraries(runner PRIVATE libssh2 ${LIBSSH2_LIBS})
 
 foreach(_test IN LISTS DOCKER_TESTS STANDALONE_TESTS SSHD_TESTS)
@@ -97,6 +96,7 @@ foreach(_test IN LISTS DOCKER_TESTS STANDALONE_TESTS SSHD_TESTS)
       "${PROJECT_BINARY_DIR}/src"
       "${PROJECT_SOURCE_DIR}/src"
       "${PROJECT_SOURCE_DIR}/include")
+    set_property(TARGET ${_test} APPEND PROPERTY COMPILE_OPTIONS "${LIBSSH2_PICKY_C_FLAGS}")
     set_target_properties(${_test} PROPERTIES UNITY_BUILD OFF)
     target_link_libraries(${_test} PRIVATE runner ${_lib_for_tests} ${LIBSSH2_LIBS})
 
@@ -137,7 +137,7 @@ if(RUN_SSHD_TESTS AND SSHD_EXECUTABLE)
   endforeach()
 
   if(_sshd_test_targets)
-    add_test(NAME test_sshd COMMAND ${SH_EXECUTABLE} -c "${CMAKE_CURRENT_SOURCE_DIR}/test_sshd.test ${_sshd_test_targets}")
+    add_test(NAME test_sshd COMMAND "${SH_EXECUTABLE}" -c "${CMAKE_CURRENT_SOURCE_DIR}/test_sshd.test ${_sshd_test_targets}")
     set_property(TEST test_sshd APPEND PROPERTY ENVIRONMENT "srcdir=${CMAKE_CURRENT_SOURCE_DIR}")
     set_property(TEST test_sshd APPEND PROPERTY ENVIRONMENT "SSHD=${SSHD_EXECUTABLE}")
   endif()
