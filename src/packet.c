@@ -74,7 +74,7 @@ packet_queue_listener(LIBSSH2_SESSION * session, unsigned char *data,
     size_t packet_len = 17 + strlen(FwdNotReq);
     unsigned char *p;
     LIBSSH2_LISTENER *listn = _libssh2_list_first(&session->listeners);
-    char failure_code = SSH_OPEN_ADMINISTRATIVELY_PROHIBITED;
+    uint32_t failure_code = SSH_OPEN_ADMINISTRATIVELY_PROHIBITED;
     int rc;
 
     if(listen_state->state == libssh2_NB_state_idle) {
@@ -280,7 +280,7 @@ packet_x11_open(LIBSSH2_SESSION * session, unsigned char *data,
                 size_t datalen,
                 packet_x11_open_state_t *x11open_state)
 {
-    int failure_code = SSH_OPEN_CONNECT_FAILED;
+    uint32_t failure_code = SSH_OPEN_CONNECT_FAILED;
     /* 17 = packet_type(1) + channel(4) + reason(4) + descr(4) + lang(4) */
     size_t packet_len = 17 + strlen(X11FwdUnAvil);
     unsigned char *p;
@@ -462,9 +462,9 @@ packet_authagent_open(LIBSSH2_SESSION * session,
                       unsigned char *data, size_t datalen,
                       packet_authagent_state_t *authagent_state)
 {
-    int failure_code = SSH_OPEN_CONNECT_FAILED;
+    uint32_t failure_code = SSH_OPEN_CONNECT_FAILED;
     /* 17 = packet_type(1) + channel(4) + reason(4) + descr(4) + lang(4) */
-    size_t packet_len = 17 + strlen(X11FwdUnAvil);
+    size_t packet_len = 17 + strlen(AuthAgentUnavail);
     unsigned char *p;
     LIBSSH2_CHANNEL *channel = authagent_state->channel;
     int rc;
@@ -640,6 +640,10 @@ _libssh2_packet_add(LIBSSH2_SESSION * session, unsigned char *data,
     LIBSSH2_CHANNEL *channelp = NULL;
     size_t data_head = 0;
     unsigned char msg = data[0];
+
+    uint32_t channel = 0;
+    uint32_t len = 0;
+    unsigned char want_reply = 0;
 
     switch(session->packAdd_state) {
     case libssh2_NB_state_idle:
@@ -879,7 +883,7 @@ _libssh2_packet_add(LIBSSH2_SESSION * session, unsigned char *data,
                                        (int)value_len, value));
                     }
 
-                    if(name_len == 15 &&
+                    if(name && name_len == 15 &&
                         memcmp(name, "server-sig-algs", 15) == 0) {
                         if(session->server_sign_algorithms) {
                             LIBSSH2_FREE(session,
@@ -890,7 +894,7 @@ _libssh2_packet_add(LIBSSH2_SESSION * session, unsigned char *data,
                                                 LIBSSH2_ALLOC(session,
                                                               value_len + 1);
 
-                        if(session->server_sign_algorithms) {
+                        if(value && session->server_sign_algorithms) {
                             memcpy(session->server_sign_algorithms,
                                    value, value_len);
                             session->server_sign_algorithms[value_len] = '\0';
@@ -916,8 +920,7 @@ _libssh2_packet_add(LIBSSH2_SESSION * session, unsigned char *data,
 
         case SSH_MSG_GLOBAL_REQUEST:
             if(datalen >= 5) {
-                uint32_t len = 0;
-                unsigned char want_reply = 0;
+                want_reply = 0;
                 len = _libssh2_ntohu32(data + 1);
                 if((len <= (UINT_MAX - 6)) && (datalen >= (6 + len))) {
                     want_reply = data[5 + len];
@@ -926,7 +929,6 @@ _libssh2_packet_add(LIBSSH2_SESSION * session, unsigned char *data,
                                    "Received global request type %.*s (wr %X)",
                                    (int)len, data + 5, want_reply));
                 }
-
 
                 if(want_reply) {
                     static const unsigned char packet =
@@ -1116,9 +1118,9 @@ libssh2_packet_add_jump_point1:
 
         case SSH_MSG_CHANNEL_REQUEST:
             if(datalen >= 9) {
-                uint32_t channel = _libssh2_ntohu32(data + 1);
-                uint32_t len = _libssh2_ntohu32(data + 5);
-                unsigned char want_reply = 1;
+                channel = _libssh2_ntohu32(data + 1);
+                len = _libssh2_ntohu32(data + 5);
+                want_reply = 1;
 
                 if((len + 9) < datalen)
                     want_reply = data[len + 9];
@@ -1128,10 +1130,9 @@ libssh2_packet_add_jump_point1:
                                "Channel %u received request type %.*s (wr %X)",
                                channel, (int)len, data + 9, want_reply));
 
-                if(len == strlen("exit-status")
-                    && (strlen("exit-status") + 9) <= datalen
-                    && !memcmp("exit-status", data + 9,
-                               strlen("exit-status"))) {
+                if(len == strlen("exit-status") &&
+                   (strlen("exit-status") + 9) <= datalen &&
+                   !memcmp("exit-status", data + 9, strlen("exit-status"))) {
 
                     /* we've got "exit-status" packet. Set the session value */
                     if(datalen >= 20)
@@ -1151,10 +1152,10 @@ libssh2_packet_add_jump_point1:
                     }
 
                 }
-                else if(len == strlen("exit-signal")
-                         && (strlen("exit-signal") + 9) <= datalen
-                         && !memcmp("exit-signal", data + 9,
-                                    strlen("exit-signal"))) {
+                else if(len == strlen("exit-signal") &&
+                        (strlen("exit-signal") + 9) <= datalen &&
+                        !memcmp("exit-signal", data + 9,
+                                strlen("exit-signal"))) {
                     /* command terminated due to signal */
                     if(datalen >= 20)
                         channelp = _libssh2_channel_locate(session, channel);
@@ -1191,7 +1192,6 @@ libssh2_packet_add_jump_point1:
                         }
                     }
                 }
-
 
                 if(want_reply) {
                     unsigned char packet[5];
@@ -1248,11 +1248,10 @@ libssh2_packet_add_jump_point4:
             if(datalen < 17)
                 ;
             else if((datalen >= (strlen("forwarded-tcpip") + 5)) &&
-                     (strlen("forwarded-tcpip") ==
-                      _libssh2_ntohu32(data + 1))
-                     &&
-                     (memcmp(data + 5, "forwarded-tcpip",
-                             strlen("forwarded-tcpip")) == 0)) {
+                    (strlen("forwarded-tcpip") ==
+                     _libssh2_ntohu32(data + 1)) &&
+                    (memcmp(data + 5, "forwarded-tcpip",
+                            strlen("forwarded-tcpip")) == 0)) {
 
                 /* init the state struct */
                 memset(&session->packAdd_Qlstn_state, 0,
@@ -1412,11 +1411,10 @@ _libssh2_packet_ask(LIBSSH2_SESSION * session, unsigned char packet_type,
                    (unsigned int)packet_type));
 
     while(packet) {
-        if(packet->data[0] == packet_type
-            && (packet->data_len >= (match_ofs + match_len))
-            && (!match_buf ||
-                (memcmp(packet->data + match_ofs, match_buf,
-                        match_len) == 0))) {
+        if(packet->data[0] == packet_type &&
+           (packet->data_len >= (match_ofs + match_len)) &&
+           (!match_buf ||
+            (memcmp(packet->data + match_ofs, match_buf, match_len) == 0))) {
             *data = packet->data;
             *data_len = packet->data_len;
 

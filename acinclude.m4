@@ -200,16 +200,18 @@ AC_DEFUN([CURL_CC_DEBUG_OPTS],
           compiler_num=`(expr $clangvhi "*" 100 + $clangvlo) 2>/dev/null`
           if test "$appleclang" = '1' && test "$oldapple" = '0'; then
             dnl Starting with Xcode 7 / clang 3.7, Apple clang won't tell its upstream version
-            if   test "$compiler_num" -ge '1300'; then compiler_num='1200'
-            elif test "$compiler_num" -ge '1205'; then compiler_num='1101'
-            elif test "$compiler_num" -ge '1204'; then compiler_num='1000'
-            elif test "$compiler_num" -ge '1107'; then compiler_num='900'
-            elif test "$compiler_num" -ge '1103'; then compiler_num='800'
-            elif test "$compiler_num" -ge '1003'; then compiler_num='700'
-            elif test "$compiler_num" -ge '1001'; then compiler_num='600'
-            elif test "$compiler_num" -ge  '904'; then compiler_num='500'
-            elif test "$compiler_num" -ge  '902'; then compiler_num='400'
-            elif test "$compiler_num" -ge  '803'; then compiler_num='309'
+            if   test "$compiler_num" -ge '1700'; then compiler_num='1901'
+            elif test "$compiler_num" -ge '1600'; then compiler_num='1700'
+            elif test "$compiler_num" -ge '1500'; then compiler_num='1600'
+            elif test "$compiler_num" -ge '1400'; then compiler_num='1400'
+            elif test "$compiler_num" -ge '1301'; then compiler_num='1300'
+            elif test "$compiler_num" -ge '1300'; then compiler_num='1200'
+            elif test "$compiler_num" -ge '1200'; then compiler_num='1000'
+            elif test "$compiler_num" -ge '1100'; then compiler_num='800'
+            elif test "$compiler_num" -ge '1000'; then compiler_num='600'
+            elif test "$compiler_num" -ge  '901'; then compiler_num='500'
+            elif test "$compiler_num" -ge  '900'; then compiler_num='400'
+            elif test "$compiler_num" -ge  '801'; then compiler_num='309'
             elif test "$compiler_num" -ge  '703'; then compiler_num='308'
             else                                       compiler_num='307'
             fi
@@ -289,13 +291,13 @@ AC_DEFUN([CURL_CC_DEBUG_OPTS],
             CURL_ADD_COMPILER_WARNINGS([tmp_CFLAGS], [enum-conversion])
             CURL_ADD_COMPILER_WARNINGS([tmp_CFLAGS], [sometimes-uninitialized])
             case $host_os in
-            cygwin* | mingw*)
-              dnl skip missing-variable-declarations warnings for cygwin and
-              dnl mingw because the libtool wrapper executable causes them
-              ;;
-            *)
-              CURL_ADD_COMPILER_WARNINGS([tmp_CFLAGS], [missing-variable-declarations])
-              ;;
+              cygwin* | mingw*)
+                dnl skip missing-variable-declarations warnings for Cygwin and
+                dnl MinGW because the libtool wrapper executable causes them
+                ;;
+              *)
+                CURL_ADD_COMPILER_WARNINGS([tmp_CFLAGS], [missing-variable-declarations])
+                ;;
             esac
           fi
           #
@@ -333,6 +335,7 @@ AC_DEFUN([CURL_CC_DEBUG_OPTS],
           dnl clang 10 or later
           if test "$compiler_num" -ge "1000"; then
             tmp_CFLAGS="$tmp_CFLAGS -Wimplicit-fallthrough"  # we have silencing markup for clang 10.0 and above only
+            CURL_ADD_COMPILER_WARNINGS([tmp_CFLAGS], [xor-used-as-pow])
           fi
 
           CFLAGS="$CFLAGS $tmp_CFLAGS"
@@ -465,7 +468,7 @@ AC_DEFUN([CURL_CC_DEBUG_OPTS],
             CURL_ADD_COMPILER_WARNINGS([tmp_CFLAGS], [type-limits old-style-declaration])
             CURL_ADD_COMPILER_WARNINGS([tmp_CFLAGS], [missing-parameter-type empty-body])
             CURL_ADD_COMPILER_WARNINGS([tmp_CFLAGS], [clobbered ignored-qualifiers])
-            CURL_ADD_COMPILER_WARNINGS([tmp_CFLAGS], [conversion trampolines])
+            CURL_ADD_COMPILER_WARNINGS([tmp_CFLAGS], [conversion])
             CURL_ADD_COMPILER_WARNINGS([tmp_CFLAGS], [sign-conversion])
             tmp_CFLAGS="$tmp_CFLAGS -Wno-error=sign-conversion"          # FIXME
             CURL_ADD_COMPILER_WARNINGS([tmp_CFLAGS], [vla])
@@ -475,17 +478,19 @@ AC_DEFUN([CURL_CC_DEBUG_OPTS],
           #
           dnl Only gcc 4.5 or later
           if test "$compiler_num" -ge "405"; then
-            dnl Only windows targets
+            CURL_ADD_COMPILER_WARNINGS([tmp_CFLAGS], [jump-misses-init])
+            dnl Only Windows targets
             case $host_os in
-            mingw*)
-              tmp_CFLAGS="$tmp_CFLAGS -Wno-pedantic-ms-format"
-              ;;
+              mingw*)
+                tmp_CFLAGS="$tmp_CFLAGS -Wno-pedantic-ms-format"
+                ;;
             esac
           fi
           #
           dnl Only gcc 4.6 or later
           if test "$compiler_num" -ge "406"; then
             CURL_ADD_COMPILER_WARNINGS([tmp_CFLAGS], [double-promotion])
+            CURL_ADD_COMPILER_WARNINGS([tmp_CFLAGS], [trampolines])
           fi
           #
           dnl only gcc 4.8 or later
@@ -523,6 +528,18 @@ AC_DEFUN([CURL_CC_DEBUG_OPTS],
             CURL_ADD_COMPILER_WARNINGS([tmp_CFLAGS], [arith-conversion])
             CURL_ADD_COMPILER_WARNINGS([tmp_CFLAGS], [enum-conversion])
           fi
+          #
+          dnl Only gcc 12 or later
+          if test "$compiler_num" -ge "1200"; then
+            CURL_ADD_COMPILER_WARNINGS([tmp_CFLAGS], [array-compare])
+          fi
+          #
+          dnl Only gcc 13 or later
+          if test "$compiler_num" -ge "1300"; then
+            CURL_ADD_COMPILER_WARNINGS([tmp_CFLAGS], [enum-int-mismatch])
+            CURL_ADD_COMPILER_WARNINGS([tmp_CFLAGS], [xor-used-as-pow])
+          fi
+          #
 
           for flag in $CPPFLAGS; do
             case "$flag" in
@@ -750,7 +767,6 @@ AC_DEFUN([CURL_CHECK_NEED_REENTRANT_SYSTEM], [
   esac
 ])
 
-
 dnl CURL_CONFIGURE_FROM_NOW_ON_WITH_REENTRANT
 dnl -------------------------------------------------
 dnl This macro ensures that configuration tests done
@@ -769,7 +785,6 @@ cat >>confdefs.h <<_EOF
 #endif
 _EOF
 ])
-
 
 dnl CURL_CONFIGURE_REENTRANT
 dnl -------------------------------------------------
@@ -913,7 +928,6 @@ m4_case([$1],
 "
 fi
 ])
-
 
 dnl LIBSSH2_CHECK_OPTION_WERROR
 dnl -------------------------------------------------

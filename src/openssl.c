@@ -39,7 +39,9 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#ifdef LIBSSH2_CRYPTO_C /* Compile this via crypto.c */
+#include "libssh2_priv.h"
+
+#if defined(LIBSSH2_OPENSSL) || defined(LIBSSH2_WOLFSSL)
 
 #include <stdlib.h>
 #include <assert.h>
@@ -241,6 +243,7 @@ write_bn(unsigned char *buf, const BIGNUM *bn, int bn_bytes)
 }
 #endif
 
+#ifdef USE_OPENSSL_3
 static inline void
 _libssh2_swap_bytes(unsigned char *buf, unsigned long len)
 {
@@ -254,6 +257,7 @@ _libssh2_swap_bytes(unsigned char *buf, unsigned long len)
     }
 #endif
 }
+#endif
 
 int
 _libssh2_openssl_random(void *buf, size_t len)
@@ -728,7 +732,6 @@ _libssh2_dsa_sha1_verify(libssh2_dsa_ctx * dsactx,
  * returns key curve type that maps to libssh2_curve_type
  *
  */
-
 libssh2_curve_type
 _libssh2_ecdsa_get_curve_type(libssh2_ecdsa_ctx *ec_ctx)
 {
@@ -758,7 +761,6 @@ _libssh2_ecdsa_get_curve_type(libssh2_ecdsa_ctx *ec_ctx)
  * returns 0 for success, key curve type that maps to libssh2_curve_type
  *
  */
-
 int
 _libssh2_ecdsa_curve_type_from_name(const char *name,
                                     libssh2_curve_type *out_type)
@@ -790,7 +792,6 @@ _libssh2_ecdsa_curve_type_from_name(const char *name,
  * Creates a new public key given an octal string, length and type
  *
  */
-
 int
 _libssh2_ecdsa_curve_name_with_octal_new(libssh2_ecdsa_ctx ** ec_ctx,
      const unsigned char *k,
@@ -1093,7 +1094,6 @@ _libssh2_cipher_crypt(_libssh2_cipher_ctx * ctx,
     if(ret >= 1)
 #endif
     {
-        rc = 0;
         if(IS_LAST(firstlast)) {
             /* This is the last block.
                encrypt: compute tag, if applicable
@@ -1141,24 +1141,12 @@ _libssh2_cipher_crypt(_libssh2_cipher_ctx * ctx,
 
 void _libssh2_openssl_crypto_init(void)
 {
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || \
-    (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x2070000fL)
-    OpenSSL_add_all_algorithms();
-    OpenSSL_add_all_ciphers();
-    OpenSSL_add_all_digests();
-#ifndef OPENSSL_NO_ENGINE
-    ENGINE_load_builtin_engines();
-    ENGINE_register_all_complete();
-#endif
-#endif
 #if defined(LIBSSH2_WOLFSSL) && defined(DEBUG_WOLFSSL)
     wolfSSL_Debugging_ON();
 #endif
 }
 
-void _libssh2_openssl_crypto_exit(void)
-{
-}
+void _libssh2_openssl_crypto_exit(void) {}
 
 #if LIBSSH2_RSA || LIBSSH2_DSA || LIBSSH2_ECDSA || LIBSSH2_ED25519
 /* TODO: Optionally call a passphrase callback specified by the
@@ -1199,11 +1187,7 @@ read_private_key_from_memory(void **key_ctx,
 
     *key_ctx = NULL;
 
-#if OPENSSL_VERSION_NUMBER >= 0x1000200fL || defined(LIBSSH2_WOLFSSL)
     bp = BIO_new_mem_buf(filedata, (int)filedata_len);
-#else
-    bp = BIO_new_mem_buf((char *)filedata, (int)filedata_len);
-#endif
     if(!bp) {
         return -1;
     }
@@ -2102,7 +2086,6 @@ int _libssh2_ecdsa_new_private_frommemory_sk(libssh2_ecdsa_ctx ** ec_ctx,
 
 #endif /* LIBSSH2_ECDSA */
 
-
 #if LIBSSH2_ED25519
 
 int
@@ -2172,7 +2155,6 @@ clean_exit:
     return rc;
 }
 
-
 static int
 gen_publickey_from_ed_evp(LIBSSH2_SESSION *session,
                           unsigned char **method,
@@ -2241,7 +2223,6 @@ fail:
     return -1;
 }
 
-
 static int
 gen_publickey_from_ed25519_openssh_priv_data(LIBSSH2_SESSION *session,
                                              struct string_buf *decrypted,
@@ -2274,7 +2255,6 @@ gen_publickey_from_ed25519_openssh_priv_data(LIBSSH2_SESSION *session,
        tmp_len != LIBSSH2_ED25519_PRIVATE_KEY_LEN) {
         _libssh2_error(session, LIBSSH2_ERROR_PROTO,
                        "Wrong private key length");
-        ret = -1;
         goto clean_exit;
     }
 
@@ -2288,7 +2268,6 @@ gen_publickey_from_ed25519_openssh_priv_data(LIBSSH2_SESSION *session,
     if(_libssh2_get_string(decrypted, &buf, &tmp_len)) {
         _libssh2_error(session, LIBSSH2_ERROR_PROTO,
                        "Unable to read comment");
-        ret = -1;
         goto clean_exit;
     }
 
@@ -2311,7 +2290,6 @@ gen_publickey_from_ed25519_openssh_priv_data(LIBSSH2_SESSION *session,
         if(*decrypted->dataptr != i) {
             _libssh2_error(session, LIBSSH2_ERROR_PROTO,
                            "Wrong padding");
-            ret = -1;
             goto clean_exit;
         }
         i++;
@@ -2766,7 +2744,6 @@ _libssh2_ed25519_new_public(libssh2_ed25519_ctx ** ed_ctx,
     return 0;
 }
 #endif /* LIBSSH2_ED25519 */
-
 
 #if LIBSSH2_RSA
 int
@@ -3360,8 +3337,7 @@ _libssh2_md5_init(libssh2_md5_ctx *ctx)
      * "digital envelope routines:FIPS_DIGESTINIT:disabled for fips"
      * So, just return 0 in FIPS mode
      */
-#if OPENSSL_VERSION_NUMBER >= 0x000907000L && \
-    !defined(USE_OPENSSL_3) && \
+#if !defined(USE_OPENSSL_3) && \
     !defined(LIBRESSL_VERSION_NUMBER) && \
     !defined(LIBSSH2_WOLFSSL)
 
@@ -3848,11 +3824,7 @@ gen_publickey_from_sk_ecdsa_openssh_priv_data(LIBSSH2_SESSION *session,
 
         LIBSSH2_FREE(session, *pubkeydata);
         *pubkeydata_len = key_len;
-
-        if(pubkeydata)
-            *pubkeydata = key;
-        else if(key)
-            LIBSSH2_FREE(session, key);
+        *pubkeydata = key;
     }
 
     if(ec_ctx)
@@ -3878,7 +3850,6 @@ fail:
 
     return rc;
 }
-
 
 static int
 _libssh2_ecdsa_new_openssh_private(libssh2_ecdsa_ctx ** ec_ctx,
@@ -4072,7 +4043,6 @@ _libssh2_ecdsa_new_private_sk(libssh2_ecdsa_ctx ** ec_ctx,
 
     return rc;
 }
-
 
 /*
  * _libssh2_ecdsa_create_key
@@ -4383,7 +4353,6 @@ clean_exit:
 #endif
 }
 
-
 #endif /* LIBSSH2_ECDSA */
 
 #if LIBSSH2_ED25519
@@ -4510,7 +4479,6 @@ clean_exit:
 
     return (rc == 1) ? 0 : -1;
 }
-
 
 int
 _libssh2_ed25519_verify(libssh2_ed25519_ctx *ctx, const uint8_t *s,
@@ -5016,11 +4984,7 @@ _libssh2_pub_priv_keyfilememory(LIBSSH2_SESSION *session,
                    LIBSSH2_TRACE_AUTH,
                    "Computing public key from private key."));
 
-#if OPENSSL_VERSION_NUMBER >= 0x1000200fL || defined(LIBSSH2_WOLFSSL)
     bp = BIO_new_mem_buf(privatekeydata, (int)privatekeydata_len);
-#else
-    bp = BIO_new_mem_buf((char *)privatekeydata, (int)privatekeydata_len);
-#endif
     if(!bp)
         return _libssh2_error(session, LIBSSH2_ERROR_ALLOC,
                               "Unable to allocate memory when"
@@ -5128,11 +5092,7 @@ _libssh2_sk_pub_keyfilememory(LIBSSH2_SESSION *session,
                    LIBSSH2_TRACE_AUTH,
                    "Computing public key from private key."));
 
-#if OPENSSL_VERSION_NUMBER >= 0x1000200fL || defined(LIBSSH2_WOLFSSL)
     bp = BIO_new_mem_buf(privatekeydata, (int)privatekeydata_len);
-#else
-    bp = BIO_new_mem_buf((char *)privatekeydata, (int)privatekeydata_len);
-#endif
     if(!bp)
         return _libssh2_error(session, LIBSSH2_ERROR_ALLOC,
                               "Unable to allocate memory when"
@@ -5211,7 +5171,6 @@ _libssh2_bn_from_bin(_libssh2_bn *bn, size_t len, const unsigned char *val)
  * Return supported key hash algo upgrades, see crypto.h
  *
  */
-
 const char *
 _libssh2_supported_key_sign_algorithms(LIBSSH2_SESSION *session,
                                        unsigned char *key_method,
@@ -5237,4 +5196,4 @@ _libssh2_supported_key_sign_algorithms(LIBSSH2_SESSION *session,
     return NULL;
 }
 
-#endif /* LIBSSH2_CRYPTO_C */
+#endif /* LIBSSH2_OPENSSL || LIBSSH2_WOLFSSL */

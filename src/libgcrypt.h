@@ -61,7 +61,7 @@
 
 #define LIBSSH2_RSA 1
 #define LIBSSH2_RSA_SHA1 1
-#define LIBSSH2_RSA_SHA2 0
+#define LIBSSH2_RSA_SHA2 1
 #define LIBSSH2_DSA 1
 #define LIBSSH2_ECDSA 0
 #define LIBSSH2_ED25519 0
@@ -186,7 +186,6 @@
     _libssh2_gcry_ciphermode(GCRY_CIPHER_3DES, GCRY_CIPHER_MODE_CBC)
 #define _libssh2_cipher_chacha20 \
     _libssh2_gcry_ciphermode(GCRY_CIPHER_CHACHA20, GCRY_CIPHER_MODE_STREAM)
-
 
 #define _libssh2_cipher_dtor(ctx) gcry_cipher_close(*(ctx))
 

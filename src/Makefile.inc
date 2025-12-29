@@ -1,21 +1,27 @@
 # Copyright (C) The libssh2 project and its contributors.
 # SPDX-License-Identifier: BSD-3-Clause
+
+# Shared between CMakeLists.txt and Makefile.am
+
 CSOURCES =              \
   agent.c               \
   bcrypt_pbkdf.c        \
-  channel.c             \
-  comp.c                \
   chacha.c              \
+  channel.c             \
   cipher-chachapoly.c   \
+  comp.c                \
   crypt.c               \
-  crypto.c              \
   global.c              \
   hostkey.c             \
   keepalive.c           \
   kex.c                 \
   knownhost.c           \
+  libgcrypt.c           \
   mac.c                 \
+  mbedtls.c             \
   misc.c                \
+  openssl.c             \
+  os400qc3.c            \
   packet.c              \
   pem.c                 \
   poly1305.c            \
@@ -26,7 +32,8 @@ CSOURCES =              \
   transport.c           \
   userauth.c            \
   userauth_kbd_packet.c \
-  version.c
+  version.c             \
+  wincng.c
 
 HHEADERS =              \
   chacha.h              \
@@ -53,10 +60,4 @@ HHEADERS =              \
   wincng.h
 
 EXTRA_DIST =            \
-  agent_win.c           \
-  blowfish.c            \
-  libgcrypt.c           \
-  mbedtls.c             \
-  openssl.c             \
-  os400qc3.c            \
-  wincng.c
+  blowfish.c

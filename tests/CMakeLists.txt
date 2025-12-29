@@ -38,23 +38,21 @@
 
 include(CopyRuntimeDependencies)
 
-include_directories(SYSTEM ${CRYPTO_BACKEND_INCLUDE_DIR})
-
 list(APPEND LIBSSH2_LIBS ${LIBSSH2_LIBS_SOCKET})
 
-transform_makefile_inc("Makefile.inc" "${CMAKE_CURRENT_BINARY_DIR}/Makefile.inc.cmake")
-# Get 'DOCKER_TESTS', 'DOCKER_TESTS_STATIC', 'STANDALONE_TESTS', 'STANDALONE_TESTS_STATIC', 'SSHD_TESTS',
-# 'librunner_la_SOURCES' variables
+libssh2_transform_makefile_inc("Makefile.inc" "${CMAKE_CURRENT_BINARY_DIR}/Makefile.inc.cmake")
+# Get DOCKER_TESTS, DOCKER_TESTS_STATIC, STANDALONE_TESTS, STANDALONE_TESTS_STATIC, SSHD_TESTS,
+# librunner_la_SOURCES, EXTRA_DIST variables
 include("${CMAKE_CURRENT_BINARY_DIR}/Makefile.inc.cmake")
 list(APPEND DOCKER_TESTS ${DOCKER_TESTS_STATIC})
 list(APPEND STANDALONE_TESTS ${STANDALONE_TESTS_STATIC})
 
-if(CMAKE_COMPILER_IS_GNUCC)
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
   find_program(GCOV_PATH "gcov")
   if(GCOV_PATH)
     set(_gcov_cflags "-g" "--coverage")
-    if(NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0)
-      string(APPEND _gcov_cflags " -fprofile-abs-path")
+    if(CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 8.0)
+      list(APPEND _gcov_cflags "-fprofile-abs-path")
     endif()
   endif()
 endif()
@@ -68,8 +66,6 @@ if(SH_EXECUTABLE)
     find_program(SSHD_EXECUTABLE "sshd")
     mark_as_advanced(SSHD_EXECUTABLE)
   endif()
-
-  add_test(NAME mansyntax COMMAND ${SH_EXECUTABLE} -c "${CMAKE_CURRENT_SOURCE_DIR}/mansyntax.sh")
 endif()
 
 add_library(runner STATIC ${librunner_la_SOURCES})
@@ -78,7 +74,8 @@ target_include_directories(runner PRIVATE
   "${PROJECT_BINARY_DIR}/src"
   "${PROJECT_SOURCE_DIR}/src"
   "${PROJECT_SOURCE_DIR}/include")
-target_link_libraries(runner PRIVATE libssh2)
+set_property(TARGET runner APPEND PROPERTY COMPILE_OPTIONS "${LIBSSH2_PICKY_C_FLAGS}")
+target_link_libraries(runner PRIVATE libssh2 ${LIBSSH2_LIBS})
 
 foreach(_test IN LISTS DOCKER_TESTS STANDALONE_TESTS SSHD_TESTS)
   if(NOT ";${DOCKER_TESTS_STATIC};${STANDALONE_TESTS_STATIC};" MATCHES ";${_test};")
@@ -99,16 +96,17 @@ foreach(_test IN LISTS DOCKER_TESTS STANDALONE_TESTS SSHD_TESTS)
       "${PROJECT_BINARY_DIR}/src"
       "${PROJECT_SOURCE_DIR}/src"
       "${PROJECT_SOURCE_DIR}/include")
+    set_property(TARGET ${_test} APPEND PROPERTY COMPILE_OPTIONS "${LIBSSH2_PICKY_C_FLAGS}")
     set_target_properties(${_test} PROPERTIES UNITY_BUILD OFF)
-    target_link_libraries(${_test} runner ${_lib_for_tests} ${LIBSSH2_LIBS})
+    target_link_libraries(${_test} PRIVATE runner ${_lib_for_tests} ${LIBSSH2_LIBS})
 
     # build a single test with gcov
     if(GCOV_PATH AND _test STREQUAL "test_auth_keyboard_info_request" AND TARGET ${LIB_STATIC})
       target_compile_options(${_test} BEFORE PRIVATE ${_gcov_cflags})
-      target_link_libraries(${_test} "gcov")
+      target_link_libraries(${_test} PRIVATE "gcov")
     endif()
 
-    list(APPEND TEST_TARGETS ${_test})
+    list(APPEND _test_targets ${_test})
   endif()
 endforeach()
 
@@ -139,7 +137,7 @@ if(RUN_SSHD_TESTS AND SSHD_EXECUTABLE)
   endforeach()
 
   if(_sshd_test_targets)
-    add_test(NAME test_sshd COMMAND ${SH_EXECUTABLE} -c "${CMAKE_CURRENT_SOURCE_DIR}/test_sshd.test ${_sshd_test_targets}")
+    add_test(NAME test_sshd COMMAND "${SH_EXECUTABLE}" -c "${CMAKE_CURRENT_SOURCE_DIR}/test_sshd.test ${_sshd_test_targets}")
     set_property(TEST test_sshd APPEND PROPERTY ENVIRONMENT "srcdir=${CMAKE_CURRENT_SOURCE_DIR}")
     set_property(TEST test_sshd APPEND PROPERTY ENVIRONMENT "SSHD=${SSHD_EXECUTABLE}")
   endif()
@@ -166,15 +164,21 @@ endif()
 add_custom_target(coverage
   COMMAND gcovr --root "${PROJECT_SOURCE_DIR}" --exclude tests/*
   COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/coverage"
-  COMMAND gcovr --root "${PROJECT_SOURCE_DIR}" --exclude tests/* --html-details --output "${CMAKE_CURRENT_BINARY_DIR}/coverage/index.html")
+  COMMAND gcovr --root "${PROJECT_SOURCE_DIR}" --exclude tests/* --html-details
+    --output "${CMAKE_CURRENT_BINARY_DIR}/coverage/index.html")
 
-add_custom_target(clean-coverage
-  COMMAND rm -rf "${CMAKE_CURRENT_BINARY_DIR}/coverage")
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.17)
+  add_custom_target(clean-coverage COMMAND ${CMAKE_COMMAND} -E rm -rf --
+    "${CMAKE_CURRENT_BINARY_DIR}/coverage")
+else()
+  add_custom_target(clean-coverage COMMAND ${CMAKE_COMMAND} -E remove_directory
+    "${CMAKE_CURRENT_BINARY_DIR}/coverage")
+endif()
 
-add_target_to_copy_dependencies(
+libssh2_add_target_to_copy_dependencies(
   TARGET copy_test_dependencies
-  DEPENDENCIES ${RUNTIME_DEPENDENCIES}
-  BEFORE_TARGETS ${TEST_TARGETS})
+  DEPENDENCIES ${_runtime_dependencies}
+  BEFORE_TARGETS ${_test_targets})
 
 if(BUILD_OSSFUZZ)
   add_subdirectory(ossfuzz)
