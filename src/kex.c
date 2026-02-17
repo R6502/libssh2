@@ -3241,7 +3241,10 @@ static const LIBSSH2_KEX_METHOD *libssh2_kex_methods[] = {
 #endif
     &kex_method_diffie_helman_group_exchange_sha256,
     &kex_method_diffie_helman_group16_sha512,
-    &kex_method_diffie_helman_group18_sha512,
+
+    // Windows kann leider nur mx 4096 Bit DH
+    // &kex_method_diffie_helman_group18_sha512,
+
     &kex_method_diffie_helman_group14_sha256,
     &kex_method_diffie_helman_group14_sha1,
     &kex_method_diffie_helman_group1_sha1,
