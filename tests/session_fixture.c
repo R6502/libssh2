@@ -242,7 +242,6 @@ void stop_session_fixture(void)
     stop_openssh_fixture();
 }
 
-
 /* Return a static string that contains a file path relative to the srcdir
  * variable, if found.
  */
@@ -265,7 +264,7 @@ char *srcdir_path(const char *file)
                 snprintf(filepath[curpath], (size_t)len + 1, "%s/%s", p, file);
             }
             else {
-               return NULL;
+                return NULL;
             }
         }
         else {
@@ -275,7 +274,7 @@ char *srcdir_path(const char *file)
                 snprintf(filepath[curpath], (size_t)len + 1, "%s", file);
             }
             else {
-               return NULL;
+                return NULL;
             }
         }
         return filepath[curpath++];
@@ -438,7 +437,7 @@ static int read_file(const char *path, char **out_buffer, size_t *out_len)
         fprintf(stderr, "Could not determine input size of: %s\n", path);
         return 1;
     }
-    rewind(fp);
+    fseek(fp, 0L, SEEK_SET);
 
     buffer = calloc(1, (size_t)len + 1);
     if(!buffer) {
@@ -481,6 +480,11 @@ int test_auth_pubkey(LIBSSH2_SESSION *session, int flags,
             username = getenv("LOGNAME");
 #endif
         }
+    }
+
+    if(!username) {
+        fprintf(stderr, "username not set\n");
+        return 1;
     }
 
     userauth_list = libssh2_userauth_list(session, username,

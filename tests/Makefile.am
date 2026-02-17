@@ -7,8 +7,8 @@ AM_CPPFLAGS = -I$(top_builddir)/src -I$(top_srcdir)/src -I$(top_srcdir)/include
 # This might hold -Werror
 AM_CFLAGS = @LIBSSH2_CFLAG_EXTRAS@
 
-# Get DOCKER_TESTS, DOCKER_TESTS_STATIC, STANDALONE_TESTS, STANDALONE_TESTS_STATOC, SSHD_TESTS,
-# librunner_la_SOURCES defines and *_LDFLAGS for statically linked tests.
+# Get DOCKER_TESTS, DOCKER_TESTS_STATIC, STANDALONE_TESTS, STANDALONE_TESTS_STATIC, SSHD_TESTS,
+# librunner_la_SOURCES, EXTRA_DIST variables and *_LDFLAGS for statically linked tests.
 include Makefile.inc
 
 if HAVE_LIB_STATIC
@@ -20,7 +20,7 @@ endif
 TESTS_ENVIRONMENT =
 
 # Tests to run
-TESTS = mansyntax.sh
+TESTS =
 
 if RUN_DOCKER_TESTS
 TESTS += $(DOCKER_TESTS)
