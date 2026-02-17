@@ -424,14 +424,29 @@ knownhost_check(LIBSSH2_KNOWNHOSTS *hosts,
         node = _libssh2_list_first(&hosts->head);
         while(node) {
             switch(node->typemask & LIBSSH2_KNOWNHOST_TYPE_MASK) {
+
+            /* 16.03.2025: Bug hier: Mit "ecdsa-sha2-nistp256" haben wir type==LIBSSH2_KNOWNHOST_TYPE_CUSTOM
+                           aber typemask == LIBSSH2_KNOWNHOST_TYPE_PLAIN
+
+               01.09.2025: Nach Update von libssh2 nochmal überprüfen
+
+               29.12.2025: Wieder korrigiert, Beispiel "ecdsa-sha2-nistp256" */
+
             case LIBSSH2_KNOWNHOST_TYPE_PLAIN:
-                if(type == LIBSSH2_KNOWNHOST_TYPE_PLAIN)
-                    match = !strcmp(host, node->name);
-                break;
             case LIBSSH2_KNOWNHOST_TYPE_CUSTOM:
-                if(type == LIBSSH2_KNOWNHOST_TYPE_CUSTOM)
+                // dbg_printf ("knownhost_check, LIBSSH2_KNOWNHOST_TYPE_PLAIN type=%08x\n", node->typemask);
+
+                //LIBSSH2_KNOWNHOST_TYPE_CUSTOM
+                //if(type == LIBSSH2_KNOWNHOST_TYPE_PLAIN)
+                //    match = !strcmp(host, node->name);
+
+                //break;
+
+                if((type == LIBSSH2_KNOWNHOST_TYPE_CUSTOM) || (type == LIBSSH2_KNOWNHOST_TYPE_PLAIN))
                     match = !strcmp(host, node->name);
+
                 break;
+
             case LIBSSH2_KNOWNHOST_TYPE_SHA1:
                 if(type == LIBSSH2_KNOWNHOST_TYPE_PLAIN) {
                     /* when we have the sha1 version stored, we can use a
