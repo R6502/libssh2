@@ -2,7 +2,7 @@
  *
  * Sample showing how to do SSH2 connect using ssh-agent.
  *
- * The sample code has default values for host name, user name:
+ * The sample code has default values for hostname, username:
  *
  * $ ./ssh2_agent host user
  *
@@ -12,10 +12,11 @@
 #include "libssh2_setup.h"
 #include <libssh2.h>
 
-#ifdef HAVE_SYS_SOCKET_H
+#include <stdio.h>
+#include <string.h>
+
+#ifndef _WIN32
 #include <sys/socket.h>
-#endif
-#ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
 #ifdef HAVE_NETINET_IN_H
@@ -24,9 +25,6 @@
 #ifdef HAVE_ARPA_INET_H
 #include <arpa/inet.h>
 #endif
-
-#include <stdio.h>
-#include <string.h>
 
 static const char *username = "username";
 
@@ -54,15 +52,12 @@ int main(int argc, char *argv[])
     }
 #endif
 
-    if(argc > 1) {
+    if(argc > 1)
         hostaddr = inet_addr(argv[1]);
-    }
-    else {
+    else
         hostaddr = htonl(0x7F000001);
-    }
-    if(argc > 2) {
+    if(argc > 2)
         username = argv[2];
-    }
 
     rc = libssh2_init(0);
     if(rc) {
@@ -83,7 +78,7 @@ int main(int argc, char *argv[])
     sin.sin_family = AF_INET;
     sin.sin_port = htons(22);
     sin.sin_addr.s_addr = hostaddr;
-    if(connect(sock, (struct sockaddr*)(&sin), sizeof(struct sockaddr_in))) {
+    if(connect(sock, (struct sockaddr *)&sin, sizeof(struct sockaddr_in))) {
         fprintf(stderr, "failed to connect.\n");
         goto shutdown;
     }
@@ -104,13 +99,17 @@ int main(int argc, char *argv[])
     /* At this point we have not yet authenticated.  The first thing to do
      * is check the hostkey's fingerprint against our known hosts Your app
      * may have it hard coded, may go to a file, may present it to the
-     * user, that's your call
+     * user, that is your call
      */
-    fingerprint = libssh2_hostkey_hash(session, LIBSSH2_HOSTKEY_HASH_SHA1);
+    fingerprint = libssh2_hostkey_hash(session, LIBSSH2_HOSTKEY_HASH_SHA256);
     fprintf(stderr, "Fingerprint: ");
-    for(i = 0; i < 20; i++) {
-        fprintf(stderr, "%02X ", (unsigned char)fingerprint[i]);
+    if(!fingerprint) {
+        fprintf(stderr, "(null)");
+        goto shutdown;
     }
+    else
+        for(i = 0; i < 32; i++)
+            fprintf(stderr, "%02X ", (unsigned char)fingerprint[i]);
     fprintf(stderr, "\n");
 
     /* check what authentication methods are available */
@@ -150,11 +149,10 @@ int main(int argc, char *argv[])
                 rc = 1;
                 goto shutdown;
             }
-            if(libssh2_agent_userauth(agent, username, identity)) {
+            if(libssh2_agent_userauth(agent, username, identity))
                 fprintf(stderr, "Authentication with username %s and "
                         "public key %s failed.\n",
                         username, identity->comment);
-            }
             else {
                 fprintf(stderr, "Authentication with username %s and "
                         "public key %s succeeded.\n",
@@ -169,7 +167,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    /* We're authenticated now. */
+    /* We are authenticated now. */
 
     /* Request a shell */
     channel = libssh2_channel_open_session(session);
@@ -179,7 +177,7 @@ int main(int argc, char *argv[])
     }
 
     /* Some environment variables may be set,
-     * It's up to the server which ones it'll allow though
+     * It is up to the server which ones it allows though
      */
     libssh2_channel_setenv(channel, "FOO", "bar");
 
@@ -205,7 +203,7 @@ int main(int argc, char *argv[])
      * libssh2_channel_write_stderr()
      *
      * Blocking mode may be (en|dis)abled with: libssh2_channel_set_blocking()
-     * If the server send EOF, libssh2_channel_eof() will return non-0
+     * If the server send EOF, libssh2_channel_eof() returns non-0
      * To send EOF to the server use: libssh2_channel_send_eof()
      * A channel can be closed with: libssh2_channel_close()
      * A channel can be freed with: libssh2_channel_free()
@@ -213,10 +211,8 @@ int main(int argc, char *argv[])
 
 skip_shell:
 
-    if(channel) {
+    if(channel)
         libssh2_channel_free(channel);
-        channel = NULL;
-    }
 
     /* Other channel types are supported via:
      * libssh2_scp_send64()
@@ -237,7 +233,7 @@ shutdown:
     }
 
     if(sock != LIBSSH2_INVALID_SOCKET) {
-        shutdown(sock, 2);
+        shutdown(sock, 2 /* SHUT_RDWR */);
         LIBSSH2_SOCKET_CLOSE(sock);
     }
 

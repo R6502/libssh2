@@ -28,9 +28,13 @@
 #ifdef LIBSSH2_NO_RSA
 #undef LIBSSH2_RSA
 #define LIBSSH2_RSA 0
+#undef LIBSSH2_RSA_SHA1
+#define LIBSSH2_RSA_SHA1 0
+#undef LIBSSH2_RSA_SHA2
+#define LIBSSH2_RSA_SHA2 0
 #endif
 
-#ifdef LIBSSH2_NO_RSA_SHA1
+#ifndef LIBSSH2_RSA_SHA1_ENABLE
 #undef LIBSSH2_RSA_SHA1
 #define LIBSSH2_RSA_SHA1 0
 #endif
@@ -43,6 +47,11 @@
 #ifdef LIBSSH2_NO_ED25519
 #undef LIBSSH2_ED25519
 #define LIBSSH2_ED25519 0
+#endif
+
+#ifdef LIBSSH2_NO_MLKEM
+#undef LIBSSH2_MLKEM
+#define LIBSSH2_MLKEM 0
 #endif
 
 #ifdef LIBSSH2_NO_AES_CTR

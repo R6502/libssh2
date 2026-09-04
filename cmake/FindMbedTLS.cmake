@@ -6,53 +6,69 @@
 #
 # Input variables:
 #
-# - `MBEDTLS_INCLUDE_DIR`:  The mbedTLS include directory.
-# - `MBEDCRYPTO_LIBRARY`:   Path to `mbedcrypto` library.
+# - `MBEDTLS_INCLUDE_DIR`:      Absolute path to mbedTLS include directory.
+# - `MBEDCRYPTO_LIBRARY`:       Absolute path to `mbedcrypto` library.
+# - `MBEDTLS_USE_STATIC_LIBS`:  Configure for static mbedTLS libraries.
 #
 # Defines:
 #
-# - `MBEDTLS_FOUND`:        System has mbedTLS.
-# - `MBEDTLS_VERSION`:      Version of mbedTLS.
-# - `libssh2::mbedcrypto`:  mbedcrypto library target.
+# - `MBEDTLS_FOUND`:            System has mbedTLS.
+# - `MBEDTLS_VERSION`:          Version of mbedTLS.
+# - `libssh2::mbedcrypto`:      mbedcrypto library target.
 
 set(_mbedtls_pc_requires "mbedcrypto")
 
-if(LIBSSH2_USE_PKGCONFIG AND
-   NOT DEFINED MBEDTLS_INCLUDE_DIR AND
+if(NOT DEFINED MBEDTLS_INCLUDE_DIR AND
    NOT DEFINED MBEDCRYPTO_LIBRARY)
-  find_package(PkgConfig QUIET)
-  pkg_check_modules(_mbedtls ${_mbedtls_pc_requires})
+  if(LIBSSH2_USE_PKGCONFIG)
+    find_package(PkgConfig QUIET)
+    pkg_check_modules(_mbedtls ${_mbedtls_pc_requires})
+  endif()
+  if(NOT _mbedtls_FOUND AND LIBSSH2_USE_CMAKECONFIG)
+    find_package(MbedTLS CONFIG QUIET)
+  endif()
 endif()
 
 if(_mbedtls_FOUND)
   set(MbedTLS_FOUND TRUE)
   set(MBEDTLS_FOUND TRUE)
   set(MBEDTLS_VERSION ${_mbedtls_VERSION})
+  if(MBEDTLS_USE_STATIC_LIBS)
+    set(_mbedtls_CFLAGS       "${_mbedtls_STATIC_CFLAGS}")
+    set(_mbedtls_INCLUDE_DIRS "${_mbedtls_STATIC_INCLUDE_DIRS}")
+    set(_mbedtls_LIBRARY_DIRS "${_mbedtls_STATIC_LIBRARY_DIRS}")
+    set(_mbedtls_LIBRARIES    "${_mbedtls_STATIC_LIBRARIES}")
+  endif()
   message(STATUS "Found MbedTLS (via pkg-config): ${_mbedtls_INCLUDE_DIRS} (found version \"${MBEDTLS_VERSION}\")")
+elseif(MbedTLS_CONFIG)
+  set(MbedTLS_FOUND TRUE)
+  set(MBEDTLS_FOUND TRUE)
+  set(MBEDTLS_VERSION ${MbedTLS_VERSION})
+  if(MBEDTLS_VERSION GREATER_EQUAL 4.0.0)
+    set(_mbedtls_LIBRARIES MbedTLS::tfpsacrypto)
+  else()
+    set(_mbedtls_LIBRARIES MbedTLS::mbedcrypto)
+  endif()
+  list(APPEND _mbedtls_LIBRARIES MbedTLS::mbedx509 MbedTLS::mbedtls)
+  message(STATUS "Found MbedTLS (via CMake Config): ${MbedTLS_CONFIG} (found version \"${MBEDTLS_VERSION}\")")
 else()
   set(_mbedtls_pc_requires "")
 
   find_path(MBEDTLS_INCLUDE_DIR NAMES "mbedtls/version.h")
-  find_library(MBEDCRYPTO_LIBRARY NAMES "mbedcrypto" "libmbedcrypto")
+  if(MBEDTLS_USE_STATIC_LIBS)
+    find_library(MBEDCRYPTO_LIBRARY NAMES "mbedcrypto_static" "libmbedcrypto_static" "mbedcrypto" "libmbedcrypto")
+  else()
+    find_library(MBEDCRYPTO_LIBRARY NAMES "mbedcrypto" "libmbedcrypto")
+  endif()
 
   unset(MBEDTLS_VERSION CACHE)
-  if(MBEDTLS_INCLUDE_DIR)
-    if(EXISTS "${MBEDTLS_INCLUDE_DIR}/mbedtls/build_info.h")  # 3.x
-      set(_version_header "${MBEDTLS_INCLUDE_DIR}/mbedtls/build_info.h")
-    elseif(EXISTS "${MBEDTLS_INCLUDE_DIR}/mbedtls/version.h")  # 2.x
-      set(_version_header "${MBEDTLS_INCLUDE_DIR}/mbedtls/version.h")
-    else()
-      unset(_version_header)
-    endif()
-    if(_version_header)
-      set(_version_regex "#[\t ]*define[\t ]+MBEDTLS_VERSION_STRING[\t ]+\"([0-9.]+)\"")
-      file(STRINGS "${_version_header}" _version_str REGEX "${_version_regex}")
-      string(REGEX REPLACE "${_version_regex}" "\\1" _version_str "${_version_str}")
-      set(MBEDTLS_VERSION "${_version_str}")
-      unset(_version_regex)
-      unset(_version_str)
-      unset(_version_header)
-    endif()
+  if(MBEDTLS_INCLUDE_DIR AND EXISTS "${MBEDTLS_INCLUDE_DIR}/mbedtls/build_info.h")
+    set(_version_regex "#[\t ]*define[\t ]+MBEDTLS_VERSION_STRING[\t ]+\"([0-9.]+)\"")
+    file(STRINGS "${MBEDTLS_INCLUDE_DIR}/mbedtls/build_info.h" _version_str REGEX "${_version_regex}")
+    string(REGEX REPLACE "${_version_regex}" "\\1" _version_str "${_version_str}")
+    set(MBEDTLS_VERSION "${_version_str}")
+    unset(_version_regex)
+    unset(_version_str)
   endif()
 
   include(FindPackageHandleStandardArgs)
@@ -73,10 +89,6 @@ else()
 endif()
 
 if(MBEDTLS_FOUND)
-  if(CMAKE_VERSION VERSION_LESS 3.13)
-    link_directories(${_mbedtls_LIBRARY_DIRS})
-  endif()
-
   if(NOT TARGET libssh2::mbedcrypto)
     add_library(libssh2::mbedcrypto INTERFACE IMPORTED)
     set_target_properties(libssh2::mbedcrypto PROPERTIES

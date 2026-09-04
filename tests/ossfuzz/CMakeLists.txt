@@ -13,7 +13,7 @@ target_include_directories(ssh2_client_fuzzer PRIVATE
   "${PROJECT_SOURCE_DIR}/include")
 if(LIB_FUZZING_ENGINE)
   if(LIB_FUZZING_ENGINE STREQUAL "-fsanitize=fuzzer")  # FIXME: compiler-specific
-    set_target_properties(ssh2_client_fuzzer PROPERTIES LINK_FLAGS "${LIB_FUZZING_ENGINE}")
+    set_property(TARGET ssh2_client_fuzzer APPEND PROPERTY LINK_OPTIONS "${LIB_FUZZING_ENGINE}")
   else()
     target_link_libraries(ssh2_client_fuzzer ${LIB_FUZZING_ENGINE})
   endif()

@@ -1,38 +1,32 @@
 # Copyright (C) Alexander Lamaison <alexander.lamaison@gmail.com>
 # Copyright (C) Viktor Szakats
+# All rights reserved.
 #
-# Redistribution and use in source and binary forms,
-# with or without modification, are permitted provided
-# that the following conditions are met:
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
 #
-#   Redistributions of source code must retain the above
-#   copyright notice, this list of conditions and the
-#   following disclaimer.
+# 1. Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
 #
-#   Redistributions in binary form must reproduce the above
-#   copyright notice, this list of conditions and the following
-#   disclaimer in the documentation and/or other materials
-#   provided with the distribution.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
 #
-#   Neither the name of the copyright holder nor the names
-#   of any other contributors may be used to endorse or
-#   promote products derived from this software without
-#   specific prior written permission.
+# 3. Neither the name of the copyright holder nor the names of its
+#    contributors may be used to endorse or promote products derived from this
+#    software without specific prior written permission.
 #
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
-# CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
-# INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
-# OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
-# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
-# BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
-# WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-# NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
-# USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
-# OF SUCH DAMAGE.
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
@@ -49,18 +43,12 @@ endif()
 
 set(_libssh2_definitions "")
 
-option(CLEAR_MEMORY "Enable clearing of memory before being freed" ON)
-if(NOT CLEAR_MEMORY)
-  list(APPEND _libssh2_definitions "LIBSSH2_NO_CLEAR_MEMORY")
-endif()
-
 option(ENABLE_ZLIB_COMPRESSION "Use zlib for compression" OFF)
 add_feature_info("Compression" ENABLE_ZLIB_COMPRESSION "using zlib for compression")
 if(ENABLE_ZLIB_COMPRESSION)
   find_package(ZLIB REQUIRED)
 
   list(APPEND LIBSSH2_LIBS ZLIB::ZLIB)
-  set_target_properties(ZLIB::ZLIB PROPERTIES INTERFACE_LIBSSH2_PC_MODULES "zlib")
   list(APPEND _libssh2_definitions "LIBSSH2_HAVE_ZLIB")
 endif()
 
@@ -69,11 +57,7 @@ list(APPEND LIBSSH2_LIBS ${LIBSSH2_LIBS_SOCKET})
 if(MSVC)
   set_property(DIRECTORY APPEND PROPERTY COMPILE_OPTIONS "$<$<CONFIG:Debug>:-Zi>")
   set_property(DIRECTORY APPEND PROPERTY COMPILE_OPTIONS "$<$<CONFIG:Debug>:-Od>")
-  if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.13)
-    set_property(DIRECTORY APPEND PROPERTY LINK_OPTIONS "$<$<CONFIG:Debug>:-DEBUG>")
-  else()
-    set_property(DIRECTORY APPEND PROPERTY LINK_FLAGS "$<$<CONFIG:Debug>:-DEBUG>")
-  endif()
+  set_property(DIRECTORY APPEND PROPERTY LINK_OPTIONS "$<$<CONFIG:Debug>:-DEBUG>")
 endif()
 
 ## Sources
@@ -113,6 +97,7 @@ if(BUILD_STATIC_LIBS OR BUILD_STATIC_FOR_TESTS)
   add_library(${LIB_STATIC} STATIC ${_sources})
   add_library(${PROJECT_NAME}::${LIB_STATIC} ALIAS ${LIB_STATIC})
   target_compile_definitions(${LIB_STATIC} PRIVATE ${CRYPTO_BACKEND_DEFINE} ${_libssh2_definitions})
+  set_property(TARGET ${LIB_STATIC} APPEND PROPERTY COMPILE_OPTIONS "${LIBSSH2_PICKY_C_FLAGS}")
   target_link_libraries(${LIB_STATIC} PRIVATE ${LIBSSH2_LIBS})
   set_target_properties(${LIB_STATIC} PROPERTIES
     PREFIX "" OUTPUT_NAME "libssh2" SOVERSION "${_libssh2_soversion}" VERSION "${_libssh2_libversion}"
@@ -126,27 +111,6 @@ if(BUILD_STATIC_LIBS OR BUILD_STATIC_FOR_TESTS)
     PUBLIC
       "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>"
       "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/${CMAKE_INSTALL_INCLUDEDIR}>")
-
-  # CMake before CMP0099 (CMake 3.17 2020-03-20) did not propagate libdirs to
-  # targets. It expected libs to have an absolute filename. As a workaround,
-  # manually apply dependency libdirs, for CMake consumers without this policy.
-  if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.17)
-    cmake_policy(GET CMP0099 _has_CMP0099)  # https://cmake.org/cmake/help/latest/policy/CMP0099.html
-  endif()
-  if(NOT _has_CMP0099 AND CMAKE_VERSION VERSION_GREATER_EQUAL 3.13 AND LIBSSH2_LIBS)
-    set(_libdirs "")
-    foreach(_lib IN LISTS LIBSSH2_LIBS)
-      if(TARGET "${_lib}")
-        get_target_property(_libdir "${_lib}" INTERFACE_LINK_DIRECTORIES)
-        if(_libdir)
-          list(APPEND _libdirs "${_libdir}")
-        endif()
-      endif()
-    endforeach()
-    if(_libdirs)
-      target_link_directories(${LIB_STATIC} INTERFACE ${_libdirs})
-    endif()
-  endif()
 endif()
 if(BUILD_SHARED_LIBS)
   list(APPEND _libssh2_export ${LIB_SHARED})
@@ -156,7 +120,7 @@ if(BUILD_SHARED_LIBS)
     set_property(TARGET ${LIB_SHARED} APPEND PROPERTY SOURCES "libssh2.rc")
   endif()
   target_compile_definitions(${LIB_SHARED} PRIVATE ${CRYPTO_BACKEND_DEFINE} ${_libssh2_definitions} ${LIB_SHARED_DEFINITIONS})
-  target_compile_options(${LIB_SHARED} PRIVATE ${LIB_SHARED_C_FLAGS})
+  set_property(TARGET ${LIB_SHARED} APPEND PROPERTY COMPILE_OPTIONS "${LIBSSH2_PICKY_C_FLAGS}" "${LIB_SHARED_C_FLAGS}")
   target_link_libraries(${LIB_SHARED} PRIVATE ${LIBSSH2_LIBS})
   set_target_properties(${LIB_SHARED} PROPERTIES
     PREFIX "" OUTPUT_NAME "libssh2" SOVERSION "${_libssh2_soversion}" VERSION "${_libssh2_libversion}"
@@ -197,12 +161,7 @@ if(NOT LIBSSH2_DISABLE_INSTALL)
       RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
       LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
       ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-
-    list(APPEND __runtime_dependencies $<TARGET_FILE:${LIB_SHARED}>)
   endif()
-
-  set(_runtime_dependencies ${__runtime_dependencies} CACHE INTERNAL
-    "Files that must be in the same directory as the executables at runtime.")
 
   # Package config
 
@@ -217,7 +176,7 @@ if(NOT LIBSSH2_DISABLE_INSTALL)
   export(PACKAGE ${PROJECT_NAME})  # register it
 
   # Generate libssh2-config.cmake into build tree and install it with dependencies
-  configure_file("${PROJECT_SOURCE_DIR}/cmake/libssh2-config.cmake.in" "${PROJECT_NAME}-config.cmake" @ONLY)
+  configure_file("${PROJECT_SOURCE_DIR}/cmake/libssh2-config.in.cmake" "${PROJECT_NAME}-config.cmake" @ONLY)
   install(
     FILES
       "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config.cmake"
@@ -227,9 +186,8 @@ if(NOT LIBSSH2_DISABLE_INSTALL)
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}")
 
   # Calculate variables for pkg-config
-  set(LIBSSH2_PC_LIBS_PRIVATE "")
-
   set(_ldflags "")
+  set(LIBSSH2_PC_LIBS_PRIVATE "")
 
   # Avoid getting unnecessary -L options for known system directories.
   set(_sys_libdirs "${CMAKE_C_IMPLICIT_LINK_DIRECTORIES}")
@@ -262,8 +220,8 @@ if(NOT LIBSSH2_DISABLE_INSTALL)
       set(_explicit_libs "")
       get_target_property(_imported "${_lib}" IMPORTED)
       if(NOT _imported)
-        # Reading the LOCATION property on non-imported target will error out.
-        # Assume the user will not need this information in the .pc file.
+        # Reading the LOCATION property on non-imported target errors out.
+        # Assume the user does not need this information in the .pc file.
         continue()
       endif()
       get_target_property(_libname "${_lib}" LOCATION)
@@ -282,7 +240,13 @@ if(NOT LIBSSH2_DISABLE_INSTALL)
       if(NOT _libname AND NOT _libs AND NOT _libdirs)
         message(WARNING "Bad lib in library list: ${_lib}")
       endif()
-      get_target_property(_modules "${_lib}" INTERFACE_LIBSSH2_PC_MODULES)
+      if(_lib STREQUAL OpenSSL::Crypto AND NOT HAVE_BORINGSSL)  # BoringSSL does not provide libcrypto.pc
+        set(_modules "libcrypto")
+      elseif(_lib STREQUAL ZLIB::ZLIB AND NOT ANDROID)  # Android does not provide zlib.pc
+        set(_modules "zlib")
+      else()
+        get_target_property(_modules "${_lib}" INTERFACE_LIBSSH2_PC_MODULES)
+      endif()
       if(_modules)
         list(APPEND LIBSSH2_PC_REQUIRES_PRIVATE "${_modules}")
       endif()
@@ -291,8 +255,13 @@ if(NOT LIBSSH2_DISABLE_INSTALL)
         if(_lib MATCHES "/")
           # This gets a bit more complex, because we want to specify the
           # directory separately, and only once per directory
-          get_filename_component(_libdir ${_lib} DIRECTORY)
-          get_filename_component(_libname ${_lib} NAME_WE)
+          if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.20)
+            cmake_path(GET _lib PARENT_PATH _libdir)
+            cmake_path(GET _lib STEM _libname)
+          else()
+            get_filename_component(_libdir "${_lib}" DIRECTORY)
+            get_filename_component(_libname "${_lib}" NAME_WE)
+          endif()
           if(_libname MATCHES "^lib")
             if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.20)
               cmake_path(SET _libdir NORMALIZE "${_libdir}")
@@ -306,6 +275,8 @@ if(NOT LIBSSH2_DISABLE_INSTALL)
           else()
             list(APPEND LIBSSH2_PC_LIBS_PRIVATE "${_lib}")
           endif()
+        elseif(_lib MATCHES "^-")  # '-option'
+          list(APPEND LIBSSH2_PC_LIBS_PRIVATE "${_lib}")
         else()
           list(APPEND LIBSSH2_PC_LIBS_PRIVATE "-l${_lib}")
         endif()
@@ -391,11 +362,13 @@ if(NOT LIBSSH2_DISABLE_INSTALL)
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig")
 
   # Consumed variables:
+  #   CMAKE_MINIMUM_REQUIRED_VERSION
   #   CRYPTO_BACKEND
   #   LIB_NAME
   #   LIB_SELECTED
   #   LIB_SHARED
   #   LIB_STATIC
+  #   LIBSSH2_USE_CMAKECONFIG
   #   LIBSSH2_USE_PKGCONFIG
   #   ZLIB_FOUND
   include(CMakePackageConfigHelpers)

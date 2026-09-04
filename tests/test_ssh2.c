@@ -6,9 +6,9 @@
  */
 
 #include "libssh2_setup.h"
-#include <libssh2.h>
+#include "libssh2.h"
 
-#ifdef HAVE_SYS_SOCKET_H
+#ifndef _WIN32
 #include <sys/socket.h>
 #endif
 #ifdef HAVE_UNISTD_H
@@ -26,15 +26,15 @@
 
 static const char *hostname = "127.0.0.1";
 static const int port_number = 4711;
-static const char *pubkey = "key_rsa.pub";
-static const char *privkey = "key_rsa";
+static const char *pubkey = "keys/id_rsa_pem.pub";
+static const char *privkey = "keys/id_rsa_pem";
 static const char *username = "username";
 static const char *password = "password";
 
 static void portable_sleep(unsigned int seconds)
 {
 #ifdef _WIN32
-    Sleep(seconds);
+    Sleep(seconds * 1000);
 #else
     sleep(seconds);
 #endif
@@ -45,12 +45,13 @@ int main(int argc, char *argv[])
     uint32_t hostaddr;
     libssh2_socket_t sock;
     int i, auth_pw = 0;
+    int connected = 0;
     struct sockaddr_in sin;
     const char *fingerprint;
     char *userauthlist;
     int rc;
     LIBSSH2_SESSION *session = NULL;
-    LIBSSH2_CHANNEL *channel;
+    LIBSSH2_CHANNEL *channel = NULL;
     unsigned int counter;
 
 #ifdef _WIN32
@@ -66,11 +67,11 @@ int main(int argc, char *argv[])
     (void)argc;
     (void)argv;
 
-    #ifdef _WIN32
-    #define LIBSSH2_FALLBACK_USER_ENV "USERNAME"
-    #else
-    #define LIBSSH2_FALLBACK_USER_ENV "LOGNAME"
-    #endif
+#ifdef _WIN32
+#define LIBSSH2_FALLBACK_USER_ENV "USERNAME"
+#else
+#define LIBSSH2_FALLBACK_USER_ENV "LOGNAME"
+#endif
 
     if(getenv("USER"))
         username = getenv("USER");
@@ -108,24 +109,24 @@ int main(int argc, char *argv[])
     sin.sin_addr.s_addr = hostaddr;
 
     for(counter = 0; counter < 3; ++counter) {
-        if(connect(sock, (struct sockaddr*)(&sin),
+        if(connect(sock, (struct sockaddr *)(&sin),
                    sizeof(struct sockaddr_in))) {
             fprintf(stderr,
-                    "Connection to %s:%d attempt #%d failed: retrying...\n",
+                    "Connection to %s:%d attempt #%u failed: retrying...\n",
                     hostname, port_number, counter);
-            portable_sleep(1 + 2*counter);
+            portable_sleep(1 + 2 * counter);
         }
         else {
+            connected = 1;
             break;
         }
     }
-    if(sock == LIBSSH2_INVALID_SOCKET) {
-        fprintf(stderr, "Failed to connect to %s:%d\n",
-                hostname, port_number);
+    if(!connected) {
+        fprintf(stderr, "Failed to connect to %s:%d\n", hostname, port_number);
         goto shutdown;
     }
 
-    /* Create a session instance and start it up. This will trade welcome
+    /* Create a session instance and start it up. This trades welcome
      * banners, exchange keys, and setup crypto, compression, and MAC layers
      */
     session = libssh2_session_init();
@@ -136,7 +137,8 @@ int main(int argc, char *argv[])
 
     if(getenv("FIXTURE_TRACE_ALL_CONNECT") ||
        getenv("FIXTURE_TRACE_ALL")) {
-        libssh2_trace(session, ~0);
+        libssh2_trace(session,
+            ~(getenv("FIXTURE_TRACE_NO_DEBUGDUMP") ? LIBSSH2_TRACE_TRANS : 0));
         fprintf(stdout, "Trace all enabled.\n");
     }
 
@@ -151,17 +153,15 @@ int main(int argc, char *argv[])
 #endif
         do {
             rc = libssh2_session_handshake(session, sock);
-            if(rc == 0) {
+            if(rc == 0)
                 break;
-            }
             fprintf(stderr, "Failure establishing SSH session: %d\n", rc);
             if(
 #ifdef LIBSSH2_WINCNG
                rc != LIBSSH2_ERROR_KEY_EXCHANGE_FAILURE ||
 #endif
-               ++retry > retries) {
+               ++retry > retries)
                 break;
-            }
             fprintf(stderr, "Retrying... %d / %d\n", retry, retries);
         } while(1);
     }
@@ -171,13 +171,17 @@ int main(int argc, char *argv[])
     /* At this point we have not yet authenticated.  The first thing to do
      * is check the hostkey's fingerprint against our known hosts Your app
      * may have it hard coded, may go to a file, may present it to the
-     * user, that's your call
+     * user, that is your call
      */
-    fingerprint = libssh2_hostkey_hash(session, LIBSSH2_HOSTKEY_HASH_SHA1);
+    fingerprint = libssh2_hostkey_hash(session, LIBSSH2_HOSTKEY_HASH_SHA256);
     fprintf(stderr, "Fingerprint: ");
-    for(i = 0; i < 20; i++) {
-        fprintf(stderr, "%02X ", (unsigned char)fingerprint[i]);
+    if(!fingerprint) {
+        fprintf(stderr, "(null)");
+        goto shutdown;
     }
+    else
+        for(i = 0; i < 32; i++)
+            fprintf(stderr, "%02X ", (unsigned char)fingerprint[i]);
     fprintf(stderr, "\n");
 
     /* check what authentication methods are available */
@@ -185,15 +189,12 @@ int main(int argc, char *argv[])
                                          (unsigned int)strlen(username));
     if(userauthlist) {
         fprintf(stderr, "Authentication methods: %s\n", userauthlist);
-        if(strstr(userauthlist, "password")) {
+        if(strstr(userauthlist, "password"))
             auth_pw |= 1;
-        }
-        if(strstr(userauthlist, "keyboard-interactive")) {
+        if(strstr(userauthlist, "keyboard-interactive"))
             auth_pw |= 2;
-        }
-        if(strstr(userauthlist, "publickey")) {
+        if(strstr(userauthlist, "publickey"))
             auth_pw |= 4;
-        }
 
         if(auth_pw & 4) {
             /* Authenticate by public key */
@@ -203,9 +204,8 @@ int main(int argc, char *argv[])
                 fprintf(stderr, "Authentication by public key failed.\n");
                 goto shutdown;
             }
-            else {
+            else
                 fprintf(stderr, "Authentication by public key succeeded.\n");
-            }
         }
         else {
             fprintf(stderr, "No supported authentication methods found.\n");
@@ -221,7 +221,7 @@ int main(int argc, char *argv[])
     }
 
     /* Some environment variables may be set,
-     * It's up to the server which ones it'll allow though
+     * It is up to the server which ones it allows though
      */
     libssh2_channel_setenv(channel, "FOO", "bar");
 
@@ -231,7 +231,7 @@ int main(int argc, char *argv[])
      */
     if(libssh2_channel_request_pty(channel, "vanilla")) {
         fprintf(stderr, "Failed requesting pty\n");
-        goto skip_shell;
+        goto shutdown;  /* skip shell */
     }
 
     /* Open a SHELL on that pty */
@@ -242,14 +242,10 @@ int main(int argc, char *argv[])
 
     rc = 0;
 
-skip_shell:
-
-    if(channel) {
-        libssh2_channel_free(channel);
-        channel = NULL;
-    }
-
 shutdown:
+
+    if(channel)
+        libssh2_channel_free(channel);
 
     if(session) {
         libssh2_session_disconnect(session, "Normal Shutdown");
@@ -258,11 +254,7 @@ shutdown:
 
     if(sock != LIBSSH2_INVALID_SOCKET) {
         shutdown(sock, 2 /* SHUT_RDWR */);
-#ifdef _WIN32
-        closesocket(sock);
-#else
-        close(sock);
-#endif
+        LIBSSH2_SOCKET_CLOSE(sock);
     }
 
     fprintf(stderr, "all done\n");

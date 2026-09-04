@@ -43,15 +43,17 @@ name: 'AppVeyor Docker Bridge'
         required: true
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: true
+  group: ${{ github.run_id }}
 
 permissions: {}
+
+env:
+  DO_NOT_TRACK: '1'
 
 jobs:
   daemon:
     name: 'Daemon'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     env:
       SSH_HOST: '${{ github.event.inputs.ssh_host }}'

@@ -5,9 +5,10 @@
 
 #include "runner.h"
 
-static const char *username = "libssh2"; /* set in Dockerfile */
-static const char *key_file_private = "key_rsa";
-static const char *key_file_public = "key_rsa.pub"; /* set in Dockerfile */
+/* set in Dockerfile */
+static const char *username = "libssh2";
+static const char *key_file_private = "keys/id_rsa_pem";
+static const char *key_file_public = "keys/id_rsa_pem.pub";
 
 int test(LIBSSH2_SESSION *session)
 {
@@ -39,12 +40,12 @@ int test(LIBSSH2_SESSION *session)
     }
 
     channel = libssh2_channel_open_session(session);
-    #if 0
+#if 0
     if(!channel) {
         printf("Error opening channel\n");
         return 1;
     }
-    #endif
+#endif
 
     rc = libssh2_channel_request_auth_agent(channel);
     if(rc) {

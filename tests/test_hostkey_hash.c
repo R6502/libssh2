@@ -18,7 +18,7 @@ static const char *EXPECTED_ECDSA_HOSTKEY =
     "9Q7iJGReR4YM3rUCMsSynkyXojdfSClGCMY7JvWlt30ESjYvxoTfSRGx6WvaqYK/vPoYQ4=";
 
 static const char *EXPECTED_ED25519_HOSTKEY =
-    "AAAAC3NzaC1lZDI1NTE5AAAAIIxtdyg2ZRXE70UwyPVUH3UyfDBV8GX5cPF636P6hjom";
+    "AAAAC3NzaC1lZDI1NTE5AAAAIO7Dhx/ox7Xoi/sg2GrR7j2x5NxvTGKnMH3wifd6UPCx";
 
 #if LIBSSH2_MD5
 static const char *EXPECTED_RSA_MD5_HASH_DIGEST =
@@ -43,13 +43,13 @@ static const char *EXPECTED_ECDSA_SHA256_HASH_DIGEST =
     "56FCD975B166C3F0342D0036E44C311A86C0EAE40713B53FC776369BAE7F5264";
 
 static const char *EXPECTED_ED25519_SHA256_HASH_DIGEST =
-    "2638B020F6121FA750A7F4754B718419F621814C6E779D68ADF26AA68814ADDF";
+    "35578310E5AAE18186B89DD547C879550EE4534108BAEF87AC25CD5E37468B65";
 
 #if LIBSSH2_MD5
-static const size_t MD5_HASH_SIZE = 16;
+#define MD5_HASH_SIZE     16
 #endif
-static const size_t SHA1_HASH_SIZE = 20;
-static const size_t SHA256_HASH_SIZE = 32;
+#define SHA1_HASH_SIZE    20
+#define SHA256_HASH_SIZE  32
 
 static void calculate_digest(const char *hash, size_t hash_len, char *buffer,
                              size_t buffer_len)
@@ -58,16 +58,16 @@ static void calculate_digest(const char *hash, size_t hash_len, char *buffer,
     char *p = buffer;
     char *end = buffer + buffer_len;
 
-    for(i = 0; i < hash_len && p < end; ++i) {
-        p += snprintf(p, (size_t)(end - p), "%02X", (unsigned char)hash[i]);
-    }
+    for(i = 0; i < hash_len && (end - p) >= 3; ++i, p += 2)
+        snprintf(p, (size_t)(end - p), "%02X", (unsigned char)hash[i]);
 }
 
 int test(LIBSSH2_SESSION *session)
 {
-    char buf[BUFSIZ];
+    char buf[SHA256_HASH_SIZE * 2 + 1];
 
     const char *hostkey;
+    const char *hostkey_str;
 #if LIBSSH2_MD5
     const char *md5_hash;
 #endif
@@ -75,6 +75,7 @@ int test(LIBSSH2_SESSION *session)
     const char *sha256_hash;
     int type;
     size_t len;
+    size_t len_str;
 
     /* these are the host keys under test, they are currently unused */
     (void)EXPECTED_RSA_HOSTKEY;
@@ -87,7 +88,33 @@ int test(LIBSSH2_SESSION *session)
         return 1;
     }
 
-    if(type == LIBSSH2_HOSTKEY_TYPE_ED25519) {
+    if(len < 4) {
+        print_last_session_error("libssh2_session_hostkey() "
+                                 "hostkey missing length");
+        return 1;
+    }
+
+    len_str =
+        ((uint32_t)((unsigned char)hostkey[0]) << 24) |
+        ((uint32_t)((unsigned char)hostkey[1]) << 16) |
+        ((uint32_t)((unsigned char)hostkey[2]) << 8)  |
+        ((uint32_t)((unsigned char)hostkey[3]));
+    hostkey_str = hostkey + 4;
+
+    if(len_str > len - 4) {
+        print_last_session_error("libssh2_session_hostkey() "
+                                 "hostkey too short");
+        return 1;
+    }
+
+    if(SSH2_IS_LITERAL(hostkey_str, len_str, "ssh-ed25519")) {
+
+        if(type != LIBSSH2_HOSTKEY_TYPE_ED25519) {
+            fprintf(stderr,
+                    "libssh2_session_hostkey() type mismatch %.*s != %d\n",
+                    (int)len_str, hostkey_str, LIBSSH2_HOSTKEY_TYPE_ED25519);
+            return 1;
+        }
 
         sha256_hash = libssh2_hostkey_hash(session,
                                            LIBSSH2_HOSTKEY_HASH_SHA256);
@@ -97,16 +124,23 @@ int test(LIBSSH2_SESSION *session)
             return 1;
         }
 
-        calculate_digest(sha256_hash, SHA256_HASH_SIZE, buf, BUFSIZ);
+        calculate_digest(sha256_hash, SHA256_HASH_SIZE, buf, sizeof(buf));
 
-        if(strcmp(buf, EXPECTED_ED25519_SHA256_HASH_DIGEST) != 0) {
+        if(strcmp(buf, EXPECTED_ED25519_SHA256_HASH_DIGEST)) {
             fprintf(stderr,
                     "ED25519 SHA256 hash not as expected - digest %s != %s\n",
                     buf, EXPECTED_ED25519_SHA256_HASH_DIGEST);
             return 1;
         }
     }
-    else if(type == LIBSSH2_HOSTKEY_TYPE_ECDSA_256) {
+    else if(SSH2_IS_LITERAL(hostkey_str, len_str, "ecdsa-sha2-nistp256")) {
+
+        if(type != LIBSSH2_HOSTKEY_TYPE_ECDSA_256) {
+            fprintf(stderr,
+                    "libssh2_session_hostkey() type mismatch %.*s != %d\n",
+                    (int)len_str, hostkey_str, LIBSSH2_HOSTKEY_TYPE_ECDSA_256);
+            return 1;
+        }
 
 #if LIBSSH2_MD5
         md5_hash = libssh2_hostkey_hash(session, LIBSSH2_HOSTKEY_HASH_MD5);
@@ -116,9 +150,9 @@ int test(LIBSSH2_SESSION *session)
             return 1;
         }
 
-        calculate_digest(md5_hash, MD5_HASH_SIZE, buf, BUFSIZ);
+        calculate_digest(md5_hash, MD5_HASH_SIZE, buf, sizeof(buf));
 
-        if(strcmp(buf, EXPECTED_ECDSA_MD5_HASH_DIGEST) != 0) {
+        if(strcmp(buf, EXPECTED_ECDSA_MD5_HASH_DIGEST)) {
             fprintf(stderr,
                     "ECDSA MD5 hash not as expected - digest %s != %s\n",
                     buf, EXPECTED_ECDSA_MD5_HASH_DIGEST);
@@ -133,9 +167,9 @@ int test(LIBSSH2_SESSION *session)
             return 1;
         }
 
-        calculate_digest(sha1_hash, SHA1_HASH_SIZE, buf, BUFSIZ);
+        calculate_digest(sha1_hash, SHA1_HASH_SIZE, buf, sizeof(buf));
 
-        if(strcmp(buf, EXPECTED_ECDSA_SHA1_HASH_DIGEST) != 0) {
+        if(strcmp(buf, EXPECTED_ECDSA_SHA1_HASH_DIGEST)) {
             fprintf(stderr,
                     "ECDSA SHA1 hash not as expected - digest %s != %s\n",
                     buf, EXPECTED_ECDSA_SHA1_HASH_DIGEST);
@@ -150,16 +184,23 @@ int test(LIBSSH2_SESSION *session)
             return 1;
         }
 
-        calculate_digest(sha256_hash, SHA256_HASH_SIZE, buf, BUFSIZ);
+        calculate_digest(sha256_hash, SHA256_HASH_SIZE, buf, sizeof(buf));
 
-        if(strcmp(buf, EXPECTED_ECDSA_SHA256_HASH_DIGEST) != 0) {
+        if(strcmp(buf, EXPECTED_ECDSA_SHA256_HASH_DIGEST)) {
             fprintf(stderr,
                     "ECDSA SHA256 hash not as expected - digest %s != %s\n",
                     buf, EXPECTED_ECDSA_SHA256_HASH_DIGEST);
             return 1;
         }
     }
-    else if(type == LIBSSH2_HOSTKEY_TYPE_RSA) {
+    else if(SSH2_IS_LITERAL(hostkey_str, len_str, "ssh-rsa")) {
+
+        if(type != LIBSSH2_HOSTKEY_TYPE_RSA) {
+            fprintf(stderr,
+                    "libssh2_session_hostkey() type mismatch %.*s != %d\n",
+                    (int)len_str, hostkey_str, LIBSSH2_HOSTKEY_TYPE_RSA);
+            return 1;
+        }
 
 #if LIBSSH2_MD5
         md5_hash = libssh2_hostkey_hash(session, LIBSSH2_HOSTKEY_HASH_MD5);
@@ -169,9 +210,9 @@ int test(LIBSSH2_SESSION *session)
             return 1;
         }
 
-        calculate_digest(md5_hash, MD5_HASH_SIZE, buf, BUFSIZ);
+        calculate_digest(md5_hash, MD5_HASH_SIZE, buf, sizeof(buf));
 
-        if(strcmp(buf, EXPECTED_RSA_MD5_HASH_DIGEST) != 0) {
+        if(strcmp(buf, EXPECTED_RSA_MD5_HASH_DIGEST)) {
             fprintf(stderr,
                     "MD5 hash not as expected - digest %s != %s\n",
                     buf, EXPECTED_RSA_MD5_HASH_DIGEST);
@@ -186,9 +227,9 @@ int test(LIBSSH2_SESSION *session)
             return 1;
         }
 
-        calculate_digest(sha1_hash, SHA1_HASH_SIZE, buf, BUFSIZ);
+        calculate_digest(sha1_hash, SHA1_HASH_SIZE, buf, sizeof(buf));
 
-        if(strcmp(buf, EXPECTED_RSA_SHA1_HASH_DIGEST) != 0) {
+        if(strcmp(buf, EXPECTED_RSA_SHA1_HASH_DIGEST)) {
             fprintf(stderr,
                     "SHA1 hash not as expected - digest %s != %s\n",
                     buf, EXPECTED_RSA_SHA1_HASH_DIGEST);
@@ -203,17 +244,21 @@ int test(LIBSSH2_SESSION *session)
             return 1;
         }
 
-        calculate_digest(sha256_hash, SHA256_HASH_SIZE, buf, BUFSIZ);
+        calculate_digest(sha256_hash, SHA256_HASH_SIZE, buf, sizeof(buf));
 
-        if(strcmp(buf, EXPECTED_RSA_SHA256_HASH_DIGEST) != 0) {
+        if(strcmp(buf, EXPECTED_RSA_SHA256_HASH_DIGEST)) {
             fprintf(stderr,
                     "SHA256 hash not as expected - digest %s != %s\n",
                     buf, EXPECTED_RSA_SHA256_HASH_DIGEST);
             return 1;
         }
     }
+    else if(SSH2_IS_LITERAL(hostkey_str, len_str,
+                            "ssh-ed25519-cert-v01@openssh.com"))
+        fprintf(stderr, "Signed hostkey: %.*s\n", (int)len_str, hostkey_str);
     else {
-        fprintf(stderr, "Unexpected type of hostkey: %i\n", type);
+        fprintf(stderr, "Unexpected type of hostkey: %d: %.*s\n",
+                type, (int)len_str, hostkey_str);
         return 1;
     }
 

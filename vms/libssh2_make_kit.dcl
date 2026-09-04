@@ -1,3 +1,7 @@
+$! Copyright (C) The libssh2 project and its contributors.
+$!
+$! SPDX-License-Identifier: BSD-3-Clause
+$!
 $!
 $ olddir = f$environment("default")
 $ on error then goto End
@@ -197,24 +201,24 @@ $ write pt "the SSH protocol. This is the OpenVMS port of that library."
 $ write pt "Further information at https://libssh2.org/."
 $ write pt ""
 $ write pt "1 NEED_VMS83"
-$ write pt "=prompt OpenVMS 8.3 or later is not installed on your system."
-$ write pt "This product requires OpenVMS 8.3 or later to function."
+$ write pt "=prompt OpenVMS 8.3 or greater is not installed on your system."
+$ write pt "This product requires OpenVMS 8.3 or greater to function."
 $ write pt ""
 $ write pt "1 NEED_SSL"
-$ write pt "=prompt HP SSL 1.3 or later is not installed on your system."
-$ write pt "This product requires HP SSL 1.3 or later to function."
+$ write pt "=prompt HP OpenSSL 1.3 or greater is not installed on your system."
+$ write pt "This product requires HP OpenSSL 1.3 or greater to function."
 $ write pt ""
 $ write pt "1 RELEASE_NOTES"
 $ write pt "=prompt Release notes and the libssh2 help library are available in [gnv.usr.share.doc.libssh2] directory."
 $ write pt ""
 $ write pt "1 EXAMPLE"
 $ write pt "=prompt Do you want the libssh2 C programming examples ? "
-$ write pt "The libssh2 coding examples will be available in backup saveset "
+$ write pt "The libssh2 coding examples are available in backup saveset "
 $ write pt "[gnv.usr.share.doc.libssh2.examples]libssh2_examples_''versionname'.bck"
 $ write pt ""
 $ write pt "1 SOURCE"
 $ write pt "=prompt Do you want the complete libssh2 source tree ? "
-$ write pt "The libssh2 source tree will be available in backup saveset "
+$ write pt "The libssh2 source tree are available in backup saveset "
 $ write pt "[gnv.common_src]libssh2_''versionname'''datename'_src.bck"
 $close pt
 $exit

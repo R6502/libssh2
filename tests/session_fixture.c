@@ -1,38 +1,31 @@
 /* Copyright (C) Alexander Lamaison
  * All rights reserved.
  *
- * Redistribution and use in source and binary forms,
- * with or without modification, are permitted provided
- * that the following conditions are met:
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- *   Redistributions of source code must retain the above
- *   copyright notice, this list of conditions and the
- *   following disclaimer.
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
  *
- *   Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials
- *   provided with the distribution.
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
  *
- *   Neither the name of the copyright holder nor the names
- *   of any other contributors may be used to endorse or
- *   promote products derived from this software without
- *   specific prior written permission.
+ * 3. Neither the name of the copyright holder nor the names of its
+ *    contributors may be used to endorse or promote products derived from this
+ *    software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
- * USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
- * OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -40,9 +33,6 @@
 #include "session_fixture.h"
 #include "openssh_fixture.h"
 
-#ifdef HAVE_SYS_SOCKET_H
-#include <sys/socket.h>
-#endif
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
@@ -58,9 +48,8 @@ static int connect_to_server(void)
 {
     int rc;
     connected_socket = open_socket_to_openssh_server();
-    if(connected_socket == LIBSSH2_INVALID_SOCKET) {
+    if(connected_socket == LIBSSH2_INVALID_SOCKET)
         return LIBSSH2_ERROR_SOCKET_NONE;
-    }
 
     rc = libssh2_session_handshake(connected_session, connected_socket);
     if(rc) {
@@ -71,41 +60,57 @@ static int connect_to_server(void)
     return LIBSSH2_ERROR_NONE;
 }
 
-/* List of crypto protocols for which tests are skipped */
+/* List of crypto algorithms for which tests are skipped */
 static char const *skip_crypt[] = {
-#ifdef LIBSSH2_MBEDTLS
-    /* Due to a bug with mbedTLS support, these crypt methods fail.
-       Until that bug is fixed, don't run them there to avoid this
-       known issue causing red tests.
-       See: https://github.com/libssh2/libssh2/issues/793
-     */
-    "3des-cbc",
-    "aes128-cbc",
-    "aes192-cbc",
-    "aes256-cbc",
-    "aes128-gcm@openssh.com",
-    "aes256-gcm@openssh.com",
-    "rijndael-cbc@lysator.liu.se",
-#endif
-
 #if !LIBSSH2_3DES
     "3des-cbc",
 #endif
-
+#if !LIBSSH2_AES_CTR
+    "aes128-ctr",
+    "aes192-ctr",
+    "aes256-ctr",
+#endif
+#if !LIBSSH2_AES_CBC
+    "aes128-cbc",
+    "aes192-cbc",
+    "aes256-cbc",
+#endif
 #if !LIBSSH2_AES_GCM
     /* Support for AES-GCM hasn't been added to these back-ends yet */
     "aes128-gcm@openssh.com",
     "aes256-gcm@openssh.com",
 #endif
-
     NULL
 };
 
-/* List of MAC protocols for which tests are skipped */
+/* List of MAC algorithms for which tests are skipped */
 static char const *skip_mac[] = {
+#ifndef LIBSSH2_HMAC_SHA1_ENABLE
+    "hmac-sha1",
+    "hmac-sha1-etm@openssh.com",
+    "hmac-sha1-96",
+#endif
 #if !LIBSSH2_MD5
     "hmac-md5",
     "hmac-md5-96",
+#endif
+    NULL
+};
+
+/* List of HOSTKEY algorithms for which tests are skipped */
+static char const *skip_hostkey[] = {
+#if !LIBSSH2_ECDSA
+    "ecdsa-sha2-nistp256-cert-v01@openssh.com",
+#endif
+#if !LIBSSH2_RSA_SHA2
+    "rsa-sha2-256-cert-v01@openssh.com",
+    "rsa-sha2-512-cert-v01@openssh.com",
+#endif
+#if !LIBSSH2_RSA_SHA1
+    "ssh-rsa-cert-v01@openssh.com",
+#endif
+#if !LIBSSH2_ED25519
+    "ssh-ed25519-cert-v01@openssh.com",
 #endif
     NULL
 };
@@ -116,6 +121,7 @@ LIBSSH2_SESSION *start_session_fixture(int *skipped, int *err)
 
     const char *crypt = getenv("FIXTURE_TEST_CRYPT");
     const char *mac = getenv("FIXTURE_TEST_MAC");
+    const char *hostkey = getenv("FIXTURE_TEST_HOSTKEY");
 
     *skipped = 0;
     *err = LIBSSH2_ERROR_NONE;
@@ -123,7 +129,7 @@ LIBSSH2_SESSION *start_session_fixture(int *skipped, int *err)
     if(crypt) {
         char const * const *sk;
         for(sk = skip_crypt; *sk; ++sk) {
-            if(strcmp(*sk, crypt) == 0) {
+            if(!strcmp(*sk, crypt)) {
                 fprintf(stderr, "unsupported crypt algorithm (%s) skipped.\n",
                                 crypt);
                 *skipped = 1;
@@ -135,7 +141,7 @@ LIBSSH2_SESSION *start_session_fixture(int *skipped, int *err)
     if(mac) {
         char const * const *sk;
         for(sk = skip_mac; *sk; ++sk) {
-            if(strcmp(*sk, mac) == 0) {
+            if(!strcmp(*sk, mac)) {
                 fprintf(stderr, "unsupported MAC algorithm (%s) skipped.\n",
                                 mac);
                 *skipped = 1;
@@ -144,10 +150,23 @@ LIBSSH2_SESSION *start_session_fixture(int *skipped, int *err)
         }
     }
 
-    rc = start_openssh_fixture();
-    if(rc) {
-        return NULL;
+    if(hostkey) {
+        char const * const *sk;
+        for(sk = skip_hostkey; *sk; ++sk) {
+            if(!strcmp(*sk, hostkey)) {
+                fprintf(stderr,
+                        "unsupported HOSTKEY algorithm (%s) skipped.\n",
+                        hostkey);
+                *skipped = 1;
+                return NULL;
+            }
+        }
     }
+
+    rc = start_openssh_fixture();
+    if(rc)
+        return NULL;
+
     rc = libssh2_init(0);
     if(rc) {
         fprintf(stderr, "libssh2_init failed (%d)\n", rc);
@@ -161,11 +180,13 @@ LIBSSH2_SESSION *start_session_fixture(int *skipped, int *err)
     }
 
     if(getenv("FIXTURE_TRACE_ALL_CONNECT")) {
-        libssh2_trace(connected_session, ~0);
+        libssh2_trace(connected_session,
+            ~(getenv("FIXTURE_TRACE_NO_DEBUGDUMP") ? LIBSSH2_TRACE_TRANS : 0));
         fprintf(stdout, "Trace all enabled for connect_to_server.\n");
     }
     else if(getenv("FIXTURE_TRACE_ALL")) {
-        libssh2_trace(connected_session, ~0);
+        libssh2_trace(connected_session,
+            ~(getenv("FIXTURE_TRACE_NO_DEBUGDUMP") ? LIBSSH2_TRACE_TRANS : 0));
         fprintf(stdout, "Trace all enabled.\n");
     }
 
@@ -193,6 +214,26 @@ LIBSSH2_SESSION *start_session_fixture(int *skipped, int *err)
         }
     }
 
+    /* Without an explicit override, limit accepted hostkey types to those
+       tested (or potentially tested) in test_hostkey.c and
+       test_hostkey_hash.c. */
+    if(!hostkey)
+        hostkey =
+            "ssh-ed25519,"
+            "ecdsa-sha2-nistp521,"
+            "ecdsa-sha2-nistp384,"
+            "ecdsa-sha2-nistp256,"
+            "rsa-sha2-256,"
+            "rsa-sha2-512,"
+            "ssh-rsa";
+
+    if(libssh2_session_method_pref(connected_session,
+                                   LIBSSH2_METHOD_HOSTKEY, hostkey)) {
+        fprintf(stderr, "libssh2_session_method_pref() HOSTKEY failed "
+                        "(probably disabled in the build): '%s'\n", hostkey);
+        return NULL;
+    }
+
     libssh2_session_set_blocking(connected_session, 1);
 
     rc = connect_to_server();
@@ -201,9 +242,8 @@ LIBSSH2_SESSION *start_session_fixture(int *skipped, int *err)
         return NULL;
     }
 
-    if(getenv("FIXTURE_TRACE_ALL_CONNECT")) {
+    if(getenv("FIXTURE_TRACE_ALL_CONNECT"))
         libssh2_trace(connected_session, 0);
-    }
 
     return connected_session;
 }
@@ -216,9 +256,8 @@ void print_last_session_error(const char *function)
             libssh2_session_last_error(connected_session, &message, NULL, 0);
         fprintf(stderr, "%s failed (%d): %s\n", function, rc, message);
     }
-    else {
+    else
         fprintf(stderr, "No session\n");
-    }
 }
 
 void stop_session_fixture(void)
@@ -228,66 +267,47 @@ void stop_session_fixture(void)
         libssh2_session_free(connected_session);
         connected_session = NULL;
     }
-    else {
+    else
         fprintf(stderr, "Cannot stop session - none started\n");
-    }
 
     close_socket_to_openssh_server(connected_socket);
     connected_socket = LIBSSH2_INVALID_SOCKET;
-
-    srcdir_path(NULL);  /* cleanup allocated filepath */
 
     libssh2_exit();
 
     stop_openssh_fixture();
 }
 
-
-/* Return a static string that contains a file path relative to the srcdir
- * variable, if found.
- */
-#define NUMPATHS 32
-char *srcdir_path(const char *file)
+/* If 'srcdir' env is set, return '$srcdir/<file>' in a static buffer
+   (to avoid dynamic memory allocations), otherwise return the input pointer
+   unchanged. */
+const char *srcdir_path(const char *file)
 {
-    static char *filepath[NUMPATHS];
-    static int curpath;
-    char *p = getenv("srcdir");
-    if(file) {
-        int len;
-        if(curpath >= NUMPATHS) {
-            fprintf(stderr, "srcdir_path ran out of filepath slots.\n");
-        }
-        assert(curpath < NUMPATHS);
-        if(p) {
-            len = snprintf(NULL, 0, "%s/%s", p, file);
-            if(len > 2) {
-                filepath[curpath] = calloc(1, (size_t)len + 1);
-                snprintf(filepath[curpath], (size_t)len + 1, "%s/%s", p, file);
-            }
-            else {
-               return NULL;
-            }
-        }
-        else {
-            len = snprintf(NULL, 0, "%s", file);
-            if(len > 0) {
-                filepath[curpath] = calloc(1, (size_t)len + 1);
-                snprintf(filepath[curpath], (size_t)len + 1, "%s", file);
-            }
-            else {
-               return NULL;
-            }
-        }
-        return filepath[curpath++];
-    }
-    else {
-        int i;
-        for(i = 0; i < curpath; ++i) {
-            free(filepath[curpath]);
-        }
-        curpath = 0;
+    static char filepath[32][256];
+    static size_t curpath;
+
+    const char *srcdir = getenv("srcdir");
+    int len;
+
+    if(!srcdir || !*srcdir)
+        return file;
+    if(!file)
         return NULL;
+
+    if(curpath >= SSH2_ARRAYSIZE(filepath)) {
+        fprintf(stderr, "srcdir_path: ran out of filepath slots.\n");
+        abort();
     }
+
+    len = snprintf(filepath[curpath], sizeof(filepath[0]), "%s/%s",
+                   srcdir, file);
+    if(len < 0 || (size_t)len >= sizeof(filepath[0])) {
+        fprintf(stderr, "srcdir_path: path too long. srcdir='%s', fn='%s'\n",
+                srcdir, file);
+        abort();
+    }
+
+    return filepath[curpath++];
 }
 
 static const char *kbd_password;
@@ -304,13 +324,12 @@ static void kbd_callback(const char *name, int name_len,
 
     fprintf(stdout, "Kb-int name: %.*s\n", name_len, name);
     fprintf(stdout, "Kb-int instruction: %.*s\n", instruct_len, instruct);
-    for(i = 0; i < num_prompts; ++i) {
+    for(i = 0; i < num_prompts; ++i)
         fprintf(stdout, "Kb-int prompt %d: %.*s\n", i,
                 (int)prompts[i].length, prompts[i].text);
-    }
 
     if(num_prompts == 1) {
-        responses[0].text = strdup(kbd_password);
+        responses[0].text = libssh2_strdup(kbd_password);
         responses[0].length = (unsigned int)strlen(kbd_password);
     }
 }
@@ -447,7 +466,7 @@ static int read_file(const char *path, char **out_buffer, size_t *out_len)
         return 1;
     }
 
-    if(1 != fread(buffer, (size_t)len, 1, fp)) {
+    if(fread(buffer, (size_t)len, 1, fp) != 1) {
         fclose(fp);
         free(buffer);
         fprintf(stderr, "Could not read file into memory.\n");
@@ -472,15 +491,14 @@ int test_auth_pubkey(LIBSSH2_SESSION *session, int flags,
     const char *userauth_list;
 
     /* Ignore our hard-wired Dockerfile user when not running under Docker */
-    if(!openssh_fixture_have_docker() && strcmp(username, "libssh2") == 0) {
+    if(!openssh_fixture_have_docker() && !strcmp(username, "libssh2")) {
         username = getenv("USER");
-        if(!username) {
+        if(!username)
 #ifdef _WIN32
             username = getenv("USERNAME");
 #else
             username = getenv("LOGNAME");
 #endif
-        }
     }
 
     if(!username) {
@@ -518,13 +536,12 @@ int test_auth_pubkey(LIBSSH2_SESSION *session, int flags,
 
         free(buffer);
     }
-    else {
+    else
         rc = libssh2_userauth_publickey_fromfile_ex(session, username,
                                                 (unsigned int)strlen(username),
                                                     srcdir_path(fn_pub),
                                                     srcdir_path(fn_priv),
                                                     password);
-    }
 
     if((flags & TEST_AUTH_SHOULDFAIL) != 0) {
         if(rc == 0) {

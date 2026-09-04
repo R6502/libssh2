@@ -1,42 +1,36 @@
 # Copyright (C) Alexander Lamaison <alexander.lamaison@gmail.com>
 # Copyright (C) Viktor Szakats
+# All rights reserved.
 #
-# Redistribution and use in source and binary forms,
-# with or without modification, are permitted provided
-# that the following conditions are met:
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
 #
-#   Redistributions of source code must retain the above
-#   copyright notice, this list of conditions and the
-#   following disclaimer.
+# 1. Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
 #
-#   Redistributions in binary form must reproduce the above
-#   copyright notice, this list of conditions and the following
-#   disclaimer in the documentation and/or other materials
-#   provided with the distribution.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
 #
-#   Neither the name of the copyright holder nor the names
-#   of any other contributors may be used to endorse or
-#   promote products derived from this software without
-#   specific prior written permission.
+# 3. Neither the name of the copyright holder nor the names of its
+#    contributors may be used to endorse or promote products derived from this
+#    software without specific prior written permission.
 #
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
-# CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
-# INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
-# OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
-# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
-# BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
-# WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-# NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
-# USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
-# OF SUCH DAMAGE.
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-include(CopyRuntimeDependencies)
+set_property(DIRECTORY APPEND PROPERTY COMPILE_DEFINITIONS "LIBSSH2_TESTS")
 
 list(APPEND LIBSSH2_LIBS ${LIBSSH2_LIBS_SOCKET})
 
@@ -51,8 +45,8 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
   find_program(GCOV_PATH "gcov")
   if(GCOV_PATH)
     set(_gcov_cflags "-g" "--coverage")
-    if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 8.0)
-      string(APPEND _gcov_cflags " -fprofile-abs-path")
+    if(CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 8.0)
+      list(APPEND _gcov_cflags "-fprofile-abs-path")
     endif()
   endif()
 endif()
@@ -66,8 +60,6 @@ if(SH_EXECUTABLE)
     find_program(SSHD_EXECUTABLE "sshd")
     mark_as_advanced(SSHD_EXECUTABLE)
   endif()
-
-  add_test(NAME mansyntax COMMAND ${SH_EXECUTABLE} -c "${CMAKE_CURRENT_SOURCE_DIR}/mansyntax.sh")
 endif()
 
 add_library(runner STATIC ${librunner_la_SOURCES})
@@ -76,6 +68,7 @@ target_include_directories(runner PRIVATE
   "${PROJECT_BINARY_DIR}/src"
   "${PROJECT_SOURCE_DIR}/src"
   "${PROJECT_SOURCE_DIR}/include")
+set_property(TARGET runner APPEND PROPERTY COMPILE_OPTIONS "${LIBSSH2_PICKY_C_FLAGS}")
 target_link_libraries(runner PRIVATE libssh2 ${LIBSSH2_LIBS})
 
 foreach(_test IN LISTS DOCKER_TESTS STANDALONE_TESTS SSHD_TESTS)
@@ -88,7 +81,7 @@ foreach(_test IN LISTS DOCKER_TESTS STANDALONE_TESTS SSHD_TESTS)
     message(STATUS "Skip test requiring static libssh2 lib: ${_test}")
   endif()
 
-  # We support the same target as both Docker and SSHD test. Build those just once.
+  # We support the same target as both Docker and SSHD test. Build those only once.
   # Skip building tests that require the static lib when the static lib is not built.
   if(NOT TARGET ${_test} AND _lib_for_tests)
     add_executable(${_test} "${_test}.c")
@@ -97,6 +90,7 @@ foreach(_test IN LISTS DOCKER_TESTS STANDALONE_TESTS SSHD_TESTS)
       "${PROJECT_BINARY_DIR}/src"
       "${PROJECT_SOURCE_DIR}/src"
       "${PROJECT_SOURCE_DIR}/include")
+    set_property(TARGET ${_test} APPEND PROPERTY COMPILE_OPTIONS "${LIBSSH2_PICKY_C_FLAGS}")
     set_target_properties(${_test} PROPERTIES UNITY_BUILD OFF)
     target_link_libraries(${_test} PRIVATE runner ${_lib_for_tests} ${LIBSSH2_LIBS})
 
@@ -137,7 +131,7 @@ if(RUN_SSHD_TESTS AND SSHD_EXECUTABLE)
   endforeach()
 
   if(_sshd_test_targets)
-    add_test(NAME test_sshd COMMAND ${SH_EXECUTABLE} -c "${CMAKE_CURRENT_SOURCE_DIR}/test_sshd.test ${_sshd_test_targets}")
+    add_test(NAME test_sshd COMMAND "${SH_EXECUTABLE}" -c "${CMAKE_CURRENT_SOURCE_DIR}/test_sshd.test ${_sshd_test_targets}")
     set_property(TEST test_sshd APPEND PROPERTY ENVIRONMENT "srcdir=${CMAKE_CURRENT_SOURCE_DIR}")
     set_property(TEST test_sshd APPEND PROPERTY ENVIRONMENT "SSHD=${SSHD_EXECUTABLE}")
   endif()
@@ -154,6 +148,8 @@ if(RUN_DOCKER_TESTS)
       set_property(TEST ${_testname} APPEND PROPERTY ENVIRONMENT "srcdir=${CMAKE_CURRENT_SOURCE_DIR}")
       if(_test MATCHES "mac-")
         set_property(TEST ${_testname} APPEND PROPERTY ENVIRONMENT "FIXTURE_TEST_MAC=${_test}")
+      elseif(_test MATCHES "-cert-")
+        set_property(TEST ${_testname} APPEND PROPERTY ENVIRONMENT "FIXTURE_TEST_HOSTKEY=${_test}")
       else()
         set_property(TEST ${_testname} APPEND PROPERTY ENVIRONMENT "FIXTURE_TEST_CRYPT=${_test}")
       endif()
@@ -167,13 +163,8 @@ add_custom_target(coverage
   COMMAND gcovr --root "${PROJECT_SOURCE_DIR}" --exclude tests/* --html-details
     --output "${CMAKE_CURRENT_BINARY_DIR}/coverage/index.html")
 
-add_custom_target(clean-coverage
-  COMMAND rm -rf "${CMAKE_CURRENT_BINARY_DIR}/coverage")
-
-libssh2_add_target_to_copy_dependencies(
-  TARGET copy_test_dependencies
-  DEPENDENCIES ${_runtime_dependencies}
-  BEFORE_TARGETS ${_test_targets})
+add_custom_target(clean-coverage COMMAND ${CMAKE_COMMAND} -E rm -rf --
+  "${CMAKE_CURRENT_BINARY_DIR}/coverage")
 
 if(BUILD_OSSFUZZ)
   add_subdirectory(ossfuzz)

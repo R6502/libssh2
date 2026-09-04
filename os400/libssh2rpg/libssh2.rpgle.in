@@ -1,38 +1,31 @@
       * Copyright (C) Patrick Monnerat <patrick@monnerat.net>
       * All rights reserved.
       *
-      * Redistribution and use in source and binary forms,
-      * with or without modification, are permitted provided
-      * that the following conditions are met:
+      * Redistribution and use in source and binary forms, with or without
+      * modification, are permitted provided that the following conditions are met:
       *
-      *   Redistributions of source code must retain the above
-      *   copyright notice, this list of conditions and the
-      *   following disclaimer.
+      * 1. Redistributions of source code must retain the above copyright notice,
+      *    this list of conditions and the following disclaimer.
       *
-      *   Redistributions in binary form must reproduce the above
-      *   copyright notice, this list of conditions and the following
-      *   disclaimer in the documentation and/or other materials
-      *   provided with the distribution.
+      * 2. Redistributions in binary form must reproduce the above copyright notice,
+      *    this list of conditions and the following disclaimer in the documentation
+      *    and/or other materials provided with the distribution.
       *
-      *   Neither the name of the copyright holder nor the names
-      *   of any other contributors may be used to endorse or
-      *   promote products derived from this software without
-      *   specific prior written permission.
+      * 3. Neither the name of the copyright holder nor the names of its
+      *    contributors may be used to endorse or promote products derived from this
+      *    software without specific prior written permission.
       *
-      * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
-      * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
-      * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
-      * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-      * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
-      * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-      * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
-      * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-      * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-      * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
-      * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-      * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
-      * USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
-      * OF SUCH DAMAGE.
+      * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+      * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+      * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+      * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+      * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+      * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+      * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+      * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+      * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+      * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+      * POSSIBILITY OF SUCH DAMAGE.
       *
       * SPDX-License-Identifier: BSD-3-Clause
 
@@ -44,7 +37,7 @@
      d                                     its contributors.'
 
       * We use underscore instead of dash when appending DEV in dev versions
-      * just to make the BANNER define (used by src/session.c) be a valid SSH
+      * to make the BANNER define (used by src/session.c) be a valid SSH
       * banner. Release versions have no appended strings and may of course not
       * have dashes either.
      d LIBSSH2_VERSION...
@@ -61,14 +54,14 @@
 
       * This is the numeric version of the libssh2 version number, meant for
       * easier parsing and comparisons by programs. The LIBSSH2_VERSION_NUM
-      * define will always follow this syntax:
+      * define always follows this syntax:
       *
       *  X'XXYYZZ'
       *
       * Where XX, YY and ZZ are the main version, release and patch numbers in
       * hexadecimal (using 8 bits each). All three numbers are always
-      * represented using two digits.  1.2 would appear as "0x010200" while
-      * version 9.11.7 appears as X'090b07'.
+      * represented using two digits. Version 1.2 would appear as "0x010200"
+      * while 9.11.7 appears as "0x090b07".
       *
       * This 6-digit (24 bits) hexadecimal number does not show pre-release
       * number, and it is always a greater number in a more recent release. It
@@ -176,15 +169,6 @@
      d                 c                   'SSH-2.0-libssh2_@LIBSSH2_VERSION@'
      d LIBSSH2_SSH_DEFAULT_BANNER...
      d                 c                   'SSH-2.0-libssh2_@LIBSSH2_VERSION@'
-
-      * Default generate and safe prime sizes for
-      * diffie-hellman-group-exchange-sha1.
-     d LIBSSH2_DH_GEX_MINGROUP...
-     d                 c                   1024
-     d LIBSSH2_DH_GEX_OPTGROUP...
-     d                 c                   1536
-     d LIBSSH2_DH_GEX_MAXGROUP...
-     d                 c                   2048
 
       * Defaults for pty requests.
      d LIBSSH2_TERM_WIDTH...
@@ -560,7 +544,7 @@
       * libssh2_init()
       *
       * Initialize the libssh2 functions.  This typically initialize the
-      * crypto library.  It uses a global state, and is not thread safe --
+      * crypto library.  It uses a global state, and is not thread-safe --
       * you must make sure this function is not called concurrently.
       *
       * Flags can be:
@@ -860,19 +844,19 @@
      d  session                        *   value                                LIBSSH2_SESSION *
      d  username                       *   value options(*string)               const char *
      d  username_len                       value like(libssh2_Csize_t)
-     d  publickeyfiledata...
+     d  pubkeyblob...
      d                                 *   value options(*string)               const char *
-     d  publickeyfiledata_len...
+     d  pubkeyblob_len...
      d                                     value like(libssh2_Csize_t)
-     d  privatekeyfiledata...
+     d  privkeyblob...
      d                                 *   value options(*string)               const char *
-     d  privatekeyfiledata_len...
+     d  privkeyblob_len...
      d                                     value like(libssh2_Csize_t)
      d  passphrase                     *   value options(*string)               const char *
 
       * response_callback is provided with filled by library prompts array,
       * but client must allocate and fill individual responses. Responses
-      * array is already allocated. Responses data will be freed by libssh2
+      * array is already allocated. Responses data is freed by libssh2
       * after callback return, but before subsequent callback invocation.
 
      d libssh2_userauth_keyboard_interactive_ex...
@@ -905,9 +889,9 @@
      d  pubkeydata                     *   value                                const uchar *
      d  pubkeydata_len...
      d                                     value like(libssh2_Csize_t)
-     d  privatekeydata...
+     d  privkeyblob...
      d                                 *   value options(*string)               const char *
-     d  privatekeydata_len...
+     d  privkeyblob_len...
      d                                     value like(libssh2_Csize_t)
      d  passphrase                     *   value options(*string)               const char *
      d  sign_callback                  *   value procptr
@@ -1506,9 +1490,6 @@
       * If a custom type is used, salt is ignored and you must provide the host
       * pre-hashed when checking for it in the libssh2_knownhost_check()
       * function.
-      *
-      * The keylen parameter may be omitted (zero) if the key is provided as a
-      * NULL-terminated base64-encoded string.
 
       * host format (2 bits).
      d LIBSSH2_KNOWNHOST_TYPE_MASK...
@@ -1566,9 +1547,9 @@
       * Add a host and its associated key to the collection of known hosts.
       *
       * Takes a comment argument that may be NULL.  A NULL comment indicates
-      * there is no comment and the entry will end directly after the key
-      * when written out to a file.  An empty string "" comment will indicate an
-      * empty comment which will cause a single space to be written after the
+      * there is no comment and the entry ends directly after the key
+      * when written out to a file.  An empty string "" comment indicates an
+      * empty comment which causes a single space to be written after the
       * key.
       *
       * The 'type' argument specifies on what format the given host and keys
@@ -1585,9 +1566,6 @@
       * If a custom type is used, salt is ignored and you must provide the host
       * pre-hashed when checking for it in the libssh2_knownhost_check()
       * function.
-      *
-      * The keylen parameter may be omitted (zero) if the key is provided as a
-      * NULL-terminated base64-encoded string.
 
      d libssh2_knownhost_addc...
      d                 pr                  extproc('libssh2_knownhost_addc')
@@ -1602,19 +1580,18 @@
      d  typemask                           value like(libssh2_Cint)
      d  store                          *                                        libssh2_knownhost *
 
-
       * libssh2_knownhost_check
       *
       * Check a host and its associated key against the collection of known
       * hosts.
       *
-      * The type is the type/format of the given host name.
+      * The type is the type/format of the given hostname.
       *
       * plain  - ascii "hostname.domain.tld"
       * custom - prehashed base64 encoded. Note that this cannot use any salts.
       *
       *
-      * 'knownhost' may be set to NULL if you don't care about that info.
+      * 'knownhost' may be set to NULL if you do not care about that info.
       *
       * Returns:
       *
@@ -1639,7 +1616,7 @@
      d  typemask                           value like(libssh2_Cint)
      d  knownhost                      *                                        libssh2_knownhost *
 
-      * this function is identital to the above one, but also takes a port
+      * this function is identical to the above one, but also takes a port
       * argument that allows libssh2 to do a better check.
      d libssh2_knownhost_checkp...
      d                 pr                  extproc('libssh2_knownhost_checkp')
@@ -1898,7 +1875,7 @@
       * from the server.  INTERVAL is number of seconds that can pass
       * without any I/O, use 0 (the default) to disable keepalives.  To
       * avoid some busy-loop corner-cases, if you specify an interval of 1
-      * it will be treated as 2.
+      * it is treated as 2.
       *
       * Note that non-blocking applications are responsible for sending the
       * keepalive messages using libssh2_keepalive_send().
@@ -1924,7 +1901,7 @@
      d                                     like(libssh2_Cint)
 
       * NOTE NOTE NOTE
-      * libssh2_trace() has no function in builds that aren't built with debug
+      * libssh2_trace() has no function in builds that are not built with debug
       * enabled.
 
      d libssh2_trace   pr                  extproc('libssh2_trace')

@@ -6,8 +6,8 @@
 #
 # Input variables:
 #
-# - `LIBGCRYPT_INCLUDE_DIR`:  The Libgcrypt include directory.
-# - `LIBGCRYPT_LIBRARY`:      Path to `libgcrypt` library.
+# - `LIBGCRYPT_INCLUDE_DIR`:  Absolute path to Libgcrypt include directory.
+# - `LIBGCRYPT_LIBRARY`:      Absolute path to `libgcrypt` library.
 #
 # Defines:
 #
@@ -61,10 +61,6 @@ else()
 endif()
 
 if(LIBGCRYPT_FOUND)
-  if(CMAKE_VERSION VERSION_LESS 3.13)
-    link_directories(${_libgcrypt_LIBRARY_DIRS})
-  endif()
-
   if(NOT TARGET libssh2::libgcrypt)
     add_library(libssh2::libgcrypt INTERFACE IMPORTED)
     set_target_properties(libssh2::libgcrypt PROPERTIES

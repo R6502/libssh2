@@ -8,14 +8,12 @@
 #include "libssh2_setup.h"
 #include <libssh2.h>
 
-#ifdef _WIN32
-#define write(f, b, c)  write((f), (b), (unsigned int)(c))
-#endif
+#include <stdio.h>
 
-#ifdef HAVE_SYS_SOCKET_H
+#ifdef _WIN32
+#define write(f, b, c)  _write(f, b, (unsigned int)(c))
+#else
 #include <sys/socket.h>
-#endif
-#ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
 #ifdef HAVE_NETINET_IN_H
@@ -24,8 +22,6 @@
 #ifdef HAVE_ARPA_INET_H
 #include <arpa/inet.h>
 #endif
-
-#include <stdio.h>
 
 static const char *pubkey = "/home/username/.ssh/id_rsa.pub";
 static const char *privkey = "/home/username/.ssh/id_rsa";
@@ -56,21 +52,16 @@ int main(int argc, char *argv[])
     }
 #endif
 
-    if(argc > 1) {
+    if(argc > 1)
         hostaddr = inet_addr(argv[1]);
-    }
-    else {
+    else
         hostaddr = htonl(0x7F000001);
-    }
-    if(argc > 2) {
+    if(argc > 2)
         username = argv[2];
-    }
-    if(argc > 3) {
+    if(argc > 3)
         password = argv[3];
-    }
-    if(argc > 4) {
+    if(argc > 4)
         scppath = argv[4];
-    }
 
     rc = libssh2_init(0);
     if(rc) {
@@ -90,7 +81,7 @@ int main(int argc, char *argv[])
     sin.sin_family = AF_INET;
     sin.sin_port = htons(22);
     sin.sin_addr.s_addr = hostaddr;
-    if(connect(sock, (struct sockaddr*)(&sin), sizeof(struct sockaddr_in))) {
+    if(connect(sock, (struct sockaddr *)&sin, sizeof(struct sockaddr_in))) {
         fprintf(stderr, "failed to connect.\n");
         goto shutdown;
     }
@@ -102,7 +93,7 @@ int main(int argc, char *argv[])
         goto shutdown;
     }
 
-    /* ... start it up. This will trade welcome banners, exchange keys,
+    /* ... start it up. This trades welcome banners, exchange keys,
      * and setup crypto, compression, and MAC layers
      */
     rc = libssh2_session_handshake(session, sock);
@@ -114,13 +105,17 @@ int main(int argc, char *argv[])
     /* At this point we have not yet authenticated.  The first thing to do
      * is check the hostkey's fingerprint against our known hosts Your app
      * may have it hard coded, may go to a file, may present it to the
-     * user, that's your call
+     * user, that is your call
      */
-    fingerprint = libssh2_hostkey_hash(session, LIBSSH2_HOSTKEY_HASH_SHA1);
+    fingerprint = libssh2_hostkey_hash(session, LIBSSH2_HOSTKEY_HASH_SHA256);
     fprintf(stderr, "Fingerprint: ");
-    for(i = 0; i < 20; i++) {
-        fprintf(stderr, "%02X ", (unsigned char)fingerprint[i]);
+    if(!fingerprint) {
+        fprintf(stderr, "(null)");
+        goto shutdown;
     }
+    else
+        for(i = 0; i < 32; i++)
+            fprintf(stderr, "%02X ", (unsigned char)fingerprint[i]);
     fprintf(stderr, "\n");
 
     if(auth_pw) {
@@ -142,25 +137,33 @@ int main(int argc, char *argv[])
 
     /* Request a file via SCP */
     channel = libssh2_scp_recv2(session, scppath, &fileinfo);
-
     if(!channel) {
         fprintf(stderr, "Unable to open a session: %d\n",
                 libssh2_session_last_errno(session));
         goto shutdown;
     }
 
+    fprintf(stderr,
+            "size = %lu byte(s)\nmode = 0%lo\nmtime = %ld\natime = %ld\n",
+            (unsigned long)fileinfo.st_size,
+            (unsigned long)fileinfo.st_mode,
+            (long)fileinfo.st_mtime,
+            (long)fileinfo.st_atime);
+
     while(got < fileinfo.st_size) {
         char mem[1024];
         int amount = sizeof(mem);
         ssize_t nread;
 
-        if((fileinfo.st_size - got) < amount) {
+        if((fileinfo.st_size - got) < amount)
             amount = (int)(fileinfo.st_size - got);
-        }
 
         nread = libssh2_channel_read(channel, mem, (size_t)amount);
         if(nread > 0) {
-            write(1, mem, (size_t)nread);
+            ssize_t nwritten = write(1, mem, (size_t)nread);
+            if(nwritten != nread)
+                fprintf(stderr, "write failed: %ld != %ld\n",
+                        (long)nread, (long)nwritten);
         }
         else if(nread < 0) {
             fprintf(stderr, "libssh2_channel_read() failed: %ld\n",
@@ -171,7 +174,6 @@ int main(int argc, char *argv[])
     }
 
     libssh2_channel_free(channel);
-    channel = NULL;
 
 shutdown:
 
@@ -181,7 +183,7 @@ shutdown:
     }
 
     if(sock != LIBSSH2_INVALID_SOCKET) {
-        shutdown(sock, 2);
+        shutdown(sock, 2 /* SHUT_RDWR */);
         LIBSSH2_SOCKET_CLOSE(sock);
     }
 

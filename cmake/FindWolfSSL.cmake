@@ -6,8 +6,8 @@
 #
 # Input variables:
 #
-# - `WOLFSSL_INCLUDE_DIR`:  The wolfSSL include directory.
-# - `WOLFSSL_LIBRARY`:      Path to `wolfssl` library.
+# - `WOLFSSL_INCLUDE_DIR`:  Absolute path to wolfSSL include directory.
+# - `WOLFSSL_LIBRARY`:      Absolute path to `wolfssl` library.
 #
 # Defines:
 #
@@ -17,11 +17,15 @@
 
 set(_wolfssl_pc_requires "wolfssl")
 
-if(LIBSSH2_USE_PKGCONFIG AND
-   NOT DEFINED WOLFSSL_INCLUDE_DIR AND
+if(NOT DEFINED WOLFSSL_INCLUDE_DIR AND
    NOT DEFINED WOLFSSL_LIBRARY)
-  find_package(PkgConfig QUIET)
-  pkg_check_modules(_wolfssl ${_wolfssl_pc_requires})
+  if(LIBSSH2_USE_PKGCONFIG)
+    find_package(PkgConfig QUIET)
+    pkg_check_modules(_wolfssl ${_wolfssl_pc_requires})
+  endif()
+  if(NOT _wolfssl_FOUND AND LIBSSH2_USE_CMAKECONFIG)
+    find_package(wolfssl CONFIG QUIET)
+  endif()
 endif()
 
 if(_wolfssl_FOUND)
@@ -29,6 +33,12 @@ if(_wolfssl_FOUND)
   set(WOLFSSL_FOUND TRUE)
   set(WOLFSSL_VERSION ${_wolfssl_VERSION})
   message(STATUS "Found WolfSSL (via pkg-config): ${_wolfssl_INCLUDE_DIRS} (found version \"${WOLFSSL_VERSION}\")")
+elseif(wolfssl_CONFIG)
+  set(WolfSSL_FOUND TRUE)
+  set(WOLFSSL_FOUND TRUE)
+  set(WOLFSSL_VERSION ${wolfssl_VERSION})
+  set(_wolfssl_LIBRARIES wolfssl::wolfssl)
+  message(STATUS "Found WolfSSL (via CMake Config): ${wolfssl_CONFIG} (found version \"${WOLFSSL_VERSION}\")")
 else()
   find_path(WOLFSSL_INCLUDE_DIR NAMES "wolfssl/options.h")
   find_library(WOLFSSL_LIBRARY NAMES "wolfssl")
@@ -61,12 +71,28 @@ else()
 endif()
 
 if(WOLFSSL_FOUND)
-  if(WIN32)
-    list(APPEND _wolfssl_LIBRARIES "crypt32")
-  endif()
+  if(APPLE)
+    find_library(SECURITY_FRAMEWORK NAMES "Security")
+    mark_as_advanced(SECURITY_FRAMEWORK)
+    if(NOT SECURITY_FRAMEWORK)
+      message(FATAL_ERROR "Security framework not found")
+    endif()
+    list(APPEND _wolfssl_LIBRARIES "-framework Security")
 
-  if(CMAKE_VERSION VERSION_LESS 3.13)
-    link_directories(${_wolfssl_LIBRARY_DIRS})
+    find_library(COREFOUNDATION_FRAMEWORK NAMES "CoreFoundation")
+    mark_as_advanced(COREFOUNDATION_FRAMEWORK)
+    if(NOT COREFOUNDATION_FRAMEWORK)
+      message(FATAL_ERROR "CoreFoundation framework not found")
+    endif()
+    list(APPEND _wolfssl_LIBRARIES "-framework CoreFoundation")
+  elseif(WIN32)
+    list(APPEND _wolfssl_LIBRARIES "crypt32")
+  else()
+    find_library(MATH_LIBRARY NAMES "m")
+    if(MATH_LIBRARY)
+      list(APPEND _wolfssl_LIBRARIES ${MATH_LIBRARY})  # for log and pow
+    endif()
+    mark_as_advanced(MATH_LIBRARY)
   endif()
 
   if(NOT TARGET libssh2::wolfssl)

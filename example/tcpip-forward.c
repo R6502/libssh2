@@ -6,17 +6,20 @@
 #include "libssh2_setup.h"
 #include <libssh2.h>
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 #ifdef _WIN32
 #include <ws2tcpip.h>  /* for socklen_t */
-#define recv(s, b, l, f)  recv((s), (b), (int)(l), (f))
-#define send(s, b, l, f)  send((s), (b), (int)(l), (f))
-#endif
-
-#ifdef HAVE_SYS_SOCKET_H
+#define recv(s, b, l, f)  recv(s, b, (int)(l), f)
+#define send(s, b, l, f)  send(s, b, (int)(l), f)
+#else
 #include <sys/socket.h>
-#endif
-#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif
+#ifdef HAVE_SYS_SELECT_H
+#include <sys/select.h>
 #endif
 #ifdef HAVE_NETINET_IN_H
 #include <netinet/in.h>
@@ -24,13 +27,12 @@
 #ifdef HAVE_ARPA_INET_H
 #include <arpa/inet.h>
 #endif
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#if !defined(_WIN32) || defined(__MINGW32__)
+#include <sys/time.h>  /* for timeval */
+#endif
 
 #ifndef INADDR_NONE
-#define INADDR_NONE (in_addr_t)~0
+#define INADDR_NONE ((in_addr_t)~0)
 #endif
 
 static const char *pubkey = "/home/username/.ssh/id_rsa.pub";
@@ -117,7 +119,7 @@ int main(int argc, char *argv[])
         goto shutdown;
     }
     sin.sin_port = htons(22);
-    if(connect(sock, (struct sockaddr*)(&sin), sizeof(struct sockaddr_in))) {
+    if(connect(sock, (struct sockaddr *)&sin, sizeof(struct sockaddr_in))) {
         fprintf(stderr, "Failed to connect to %s.\n", inet_ntoa(sin.sin_addr));
         goto shutdown;
     }
@@ -129,7 +131,7 @@ int main(int argc, char *argv[])
         goto shutdown;
     }
 
-    /* ... start it up. This will trade welcome banners, exchange keys,
+    /* ... start it up. This trades welcome banners, exchange keys,
      * and setup crypto, compression, and MAC layers
      */
     rc = libssh2_session_handshake(session, sock);
@@ -141,12 +143,17 @@ int main(int argc, char *argv[])
     /* At this point we have not yet authenticated.  The first thing to do
      * is check the hostkey's fingerprint against our known hosts Your app
      * may have it hard coded, may go to a file, may present it to the
-     * user, that's your call
+     * user, that is your call
      */
-    fingerprint = libssh2_hostkey_hash(session, LIBSSH2_HOSTKEY_HASH_SHA1);
+    fingerprint = libssh2_hostkey_hash(session, LIBSSH2_HOSTKEY_HASH_SHA256);
     fprintf(stderr, "Fingerprint: ");
-    for(i = 0; i < 20; i++)
-        fprintf(stderr, "%02X ", (unsigned char)fingerprint[i]);
+    if(!fingerprint) {
+        fprintf(stderr, "(null)");
+        goto shutdown;
+    }
+    else
+        for(i = 0; i < 32; i++)
+            fprintf(stderr, "%02X ", (unsigned char)fingerprint[i]);
     fprintf(stderr, "\n");
 
     /* check what authentication methods are available */
@@ -180,9 +187,8 @@ int main(int argc, char *argv[])
                 fprintf(stderr, "Authentication by public key failed.\n");
                 goto shutdown;
             }
-            else {
+            else
                 fprintf(stderr, "Authentication by public key succeeded.\n");
-            }
         }
         else {
             fprintf(stderr, "No supported authentication methods found.\n");
@@ -231,7 +237,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "failed in inet_addr().\n");
         goto shutdown;
     }
-    if(-1 == connect(forwardsock, (struct sockaddr *)&sin, sinlen)) {
+    if(connect(forwardsock, (struct sockaddr *)&sin, sinlen) == -1) {
         fprintf(stderr, "failed to connect().\n");
         goto shutdown;
     }
@@ -240,7 +246,7 @@ int main(int argc, char *argv[])
             remote_listenhost, remote_listenport,
             local_destip, local_destport);
 
-    /* Must use non-blocking IO hereafter due to the current libssh2 API */
+    /* Must use non-blocking I/O hereafter due to the current libssh2 API */
     libssh2_session_set_blocking(session, 0);
 
     for(;;) {
@@ -257,7 +263,7 @@ int main(int argc, char *argv[])
         tv.tv_sec = 0;
         tv.tv_usec = 100000;
         rc = select((int)(forwardsock + 1), &fds, NULL, NULL, &tv);
-        if(-1 == rc) {
+        if(rc == -1) {
             fprintf(stderr, "failed to select().\n");
             goto shutdown;
         }
@@ -297,8 +303,7 @@ int main(int argc, char *argv[])
             if(LIBSSH2_ERROR_EAGAIN == len)
                 break;
             else if(len < 0) {
-                fprintf(stderr, "libssh2_channel_read: %ld",
-                        (long)len);
+                fprintf(stderr, "libssh2_channel_read: %ld", (long)len);
                 goto shutdown;
             }
             wr = 0;
@@ -321,7 +326,7 @@ int main(int argc, char *argv[])
 shutdown:
 
     if(forwardsock != LIBSSH2_INVALID_SOCKET) {
-        shutdown(forwardsock, 2);
+        shutdown(forwardsock, 2 /* SHUT_RDWR */);
         LIBSSH2_SOCKET_CLOSE(forwardsock);
     }
 
@@ -337,7 +342,7 @@ shutdown:
     }
 
     if(sock != LIBSSH2_INVALID_SOCKET) {
-        shutdown(sock, 2);
+        shutdown(sock, 2 /* SHUT_RDWR */);
         LIBSSH2_SOCKET_CLOSE(sock);
     }
 

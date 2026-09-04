@@ -2,7 +2,7 @@
  *
  * Sample showing how to do SFTP non-blocking mkdir.
  *
- * The sample code has default values for host name, user name, password
+ * The sample code has default values for hostname, username, password
  * and path to copy, but you can specify them on the command line like:
  *
  * $ ./sftp_mkdir_nonblock 192.168.0.1 user password /tmp/sftp_write_nonblock.c
@@ -14,10 +14,10 @@
 #include <libssh2.h>
 #include <libssh2_sftp.h>
 
-#ifdef HAVE_SYS_SOCKET_H
+#include <stdio.h>
+
+#ifndef _WIN32
 #include <sys/socket.h>
-#endif
-#ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
 #ifdef HAVE_NETINET_IN_H
@@ -26,8 +26,6 @@
 #ifdef HAVE_ARPA_INET_H
 #include <arpa/inet.h>
 #endif
-
-#include <stdio.h>
 
 static const char *pubkey = "/home/username/.ssh/id_rsa.pub";
 static const char *privkey = "/home/username/.ssh/id_rsa";
@@ -56,21 +54,16 @@ int main(int argc, char *argv[])
     }
 #endif
 
-    if(argc > 1) {
+    if(argc > 1)
         hostaddr = inet_addr(argv[1]);
-    }
-    else {
+    else
         hostaddr = htonl(0x7F000001);
-    }
-    if(argc > 2) {
+    if(argc > 2)
         username = argv[2];
-    }
-    if(argc > 3) {
+    if(argc > 3)
         password = argv[3];
-    }
-    if(argc > 4) {
+    if(argc > 4)
         sftppath = argv[4];
-    }
 
     rc = libssh2_init(0);
     if(rc) {
@@ -91,7 +84,7 @@ int main(int argc, char *argv[])
     sin.sin_family = AF_INET;
     sin.sin_port = htons(22);
     sin.sin_addr.s_addr = hostaddr;
-    if(connect(sock, (struct sockaddr*)(&sin), sizeof(struct sockaddr_in))) {
+    if(connect(sock, (struct sockaddr *)&sin, sizeof(struct sockaddr_in))) {
         fprintf(stderr, "failed to connect.\n");
         goto shutdown;
     }
@@ -103,7 +96,7 @@ int main(int argc, char *argv[])
         goto shutdown;
     }
 
-    /* ... start it up. This will trade welcome banners, exchange keys,
+    /* ... start it up. This trades welcome banners, exchange keys,
      * and setup crypto, compression, and MAC layers
      */
     rc = libssh2_session_handshake(session, sock);
@@ -115,13 +108,17 @@ int main(int argc, char *argv[])
     /* At this point we have not yet authenticated.  The first thing to do
      * is check the hostkey's fingerprint against our known hosts Your app
      * may have it hard coded, may go to a file, may present it to the
-     * user, that's your call
+     * user, that is your call
      */
-    fingerprint = libssh2_hostkey_hash(session, LIBSSH2_HOSTKEY_HASH_SHA1);
+    fingerprint = libssh2_hostkey_hash(session, LIBSSH2_HOSTKEY_HASH_SHA256);
     fprintf(stderr, "Fingerprint: ");
-    for(i = 0; i < 20; i++) {
-        fprintf(stderr, "%02X ", (unsigned char)fingerprint[i]);
+    if(!fingerprint) {
+        fprintf(stderr, "(null)");
+        goto shutdown;
     }
+    else
+        for(i = 0; i < 32; i++)
+            fprintf(stderr, "%02X ", (unsigned char)fingerprint[i]);
     fprintf(stderr, "\n");
 
     if(auth_pw) {
@@ -142,7 +139,6 @@ int main(int argc, char *argv[])
     }
 
     sftp_session = libssh2_sftp_init(session);
-
     if(!sftp_session) {
         fprintf(stderr, "Unable to init SFTP session\n");
         goto shutdown;
@@ -157,8 +153,8 @@ int main(int argc, char *argv[])
                              LIBSSH2_SFTP_S_IRGRP |
                              LIBSSH2_SFTP_S_IXGRP |
                              LIBSSH2_SFTP_S_IROTH |
-                             LIBSSH2_SFTP_S_IXOTH) ==
-          LIBSSH2_ERROR_EAGAIN);
+                             LIBSSH2_SFTP_S_IXOTH) == LIBSSH2_ERROR_EAGAIN)
+        ;
 
     libssh2_sftp_shutdown(sftp_session);
 
@@ -170,7 +166,7 @@ shutdown:
     }
 
     if(sock != LIBSSH2_INVALID_SOCKET) {
-        shutdown(sock, 2);
+        shutdown(sock, 2 /* SHUT_RDWR */);
         LIBSSH2_SOCKET_CLOSE(sock);
     }
 

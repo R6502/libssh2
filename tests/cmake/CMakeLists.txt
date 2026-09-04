@@ -1,7 +1,7 @@
 # Copyright (C) Viktor Szakats
 # SPDX-License-Identifier: BSD-3-Clause
 
-cmake_minimum_required(VERSION 3.7...3.16 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.18)
 message(STATUS "Using CMake version ${CMAKE_VERSION}")
 
 project(test-consumer C)
@@ -36,9 +36,6 @@ if(TEST_INTEGRATION_MODE STREQUAL "find_package")
 elseif(TEST_INTEGRATION_MODE STREQUAL "add_subdirectory")
   add_subdirectory(libssh2)
 elseif(TEST_INTEGRATION_MODE STREQUAL "FetchContent")
-  if(CMAKE_VERSION VERSION_LESS 3.14)
-    message(FATAL_ERROR "This test requires CMake 3.14 or upper")
-  endif()
   include(FetchContent)
   option(FROM_GIT_REPO "Git URL" "https://github.com/libssh2/libssh2.git")
   option(FROM_GIT_TAG "Git tag" "master")
@@ -65,6 +62,7 @@ elseif(TEST_INTEGRATION_MODE STREQUAL "ExternalProject")
     ${_download_extract_timestamp}
     PREFIX "${CMAKE_BINARY_DIR}/libssh2-external"
     CMAKE_ARGS "-DCMAKE_INSTALL_PREFIX=${_libssh2_install_dir}" -DBUILD_SHARED_LIBS=OFF
+      -DLIBSSH2_USE_CMAKECONFIG=OFF -DLIBSSH2_USE_PKGCONFIG=OFF
       ${LIBSSH2_TEST_OPTS} -DENABLE_ZLIB_COMPRESSION=OFF
     BUILD_BYPRODUCTS "${_libssh2_static_lib}")
 

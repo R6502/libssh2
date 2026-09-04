@@ -1,3 +1,6 @@
+$! Copyright (C) The libssh2 project and its contributors.
+$!
+$! SPDX-License-Identifier: BSD-3-Clause
 $!
 $!
 $ olddir = f$environment("default")
@@ -38,7 +41,6 @@ $!
 $exit
 $endsubroutine
 
-
 $Make: subroutine
 $!
 $ set noon
@@ -61,7 +63,6 @@ $End:
 $ delete objdir:'what'.obj;*
 $exit
 $endsubroutine
-
 
 $Init:
 $!
@@ -97,7 +98,7 @@ $ else
 $   what = f$parse(what,,,"name")
 $   if f$search("exadir:''what'.c") .eqs. ""
 $   then
-$     write sys$output "Can't make ''what'"
+$     write sys$output "Cannot make ''what'"
 $     init_status = 0
 $   endif
 $ endif

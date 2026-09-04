@@ -1,11 +1,17 @@
+<!--
+Copyright (C) The libssh2 project and its contributors.
+
+SPDX-License-Identifier: BSD-3-Clause
+-->
+
 # libssh2 source code style guide
 
 - 4 level indent
 - spaces-only (no tabs)
 - open braces on the if/for line:
 
-  ```
-  if (banana) {
+  ```c
+  if(banana) {
       go_nuts();
   }
   ```

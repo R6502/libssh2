@@ -1,7 +1,8 @@
 # Copyright (C) Alexander Lamaison <alexander.lamaison@gmail.com>
 # SPDX-License-Identifier: BSD-3-Clause
 
-FROM debian:stable-slim
+# To update, get the latest digest e.g. from https://hub.docker.com/_/debian/tags
+FROM debian:trixie-20260824-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132
 
 RUN apt-get update \
  && apt-get install -y openssh-server \
@@ -25,13 +26,17 @@ RUN install -m 0600 /tmp/etc/ssh/ssh_host_ecdsa_key /etc/ssh/ssh_host_ecdsa_key
 COPY ssh_host_ed25519_key /tmp/etc/ssh/ssh_host_ed25519_key
 RUN install -m 0600 /tmp/etc/ssh/ssh_host_ed25519_key /etc/ssh/ssh_host_ed25519_key
 
-# Trusted CA keys
-COPY ca_ecdsa /tmp/etc/ssh/ca_ecdsa
-RUN install -m 0600 /tmp/etc/ssh/ca_ecdsa /etc/ssh/ca_ecdsa
+# Host certificates
+COPY ssh_host_rsa_key-cert.pub /tmp/etc/ssh/ssh_host_rsa_key-cert.pub
+RUN install -m 0644 /tmp/etc/ssh/ssh_host_rsa_key-cert.pub /etc/ssh/ssh_host_rsa_key-cert.pub
 
-COPY ca_rsa /tmp/etc/ssh/ca_rsa
-RUN install -m 0600 /tmp/etc/ssh/ca_rsa /etc/ssh/ca_rsa
+COPY ssh_host_ecdsa_key-cert.pub /tmp/etc/ssh/ssh_host_ecdsa_key-cert.pub
+RUN install -m 0644 /tmp/etc/ssh/ssh_host_ecdsa_key-cert.pub /etc/ssh/ssh_host_ecdsa_key-cert.pub
 
+COPY ssh_host_ed25519_key-cert.pub /tmp/etc/ssh/ssh_host_ed25519_key-cert.pub
+RUN install -m 0644 /tmp/etc/ssh/ssh_host_ed25519_key-cert.pub /etc/ssh/ssh_host_ed25519_key-cert.pub
+
+# Trusted user CA keys
 COPY ca_user_keys.pub /tmp/etc/ssh/ca_user_keys.pub
 RUN install -m 0600 /tmp/etc/ssh/ca_user_keys.pub /etc/ssh/ca_user_keys.pub
 
@@ -44,7 +49,9 @@ RUN sed -i 's/KbdInteractiveAuthentication no/KbdInteractiveAuthentication yes/'
 COPY sshd_config /tmp/etc/ssh/sshd_config
 RUN cat /tmp/etc/ssh/sshd_config >> /etc/ssh/sshd_config
 RUN echo 'TrustedUserCAKeys /etc/ssh/ca_user_keys.pub' >> /etc/ssh/sshd_config
-
+RUN echo 'HostCertificate /etc/ssh/ssh_host_rsa_key-cert.pub' >> /etc/ssh/sshd_config
+RUN echo 'HostCertificate /etc/ssh/ssh_host_ecdsa_key-cert.pub' >> /etc/ssh/sshd_config
+RUN echo 'HostCertificate /etc/ssh/ssh_host_ed25519_key-cert.pub' >> /etc/ssh/sshd_config
 
 # SSH login fix. Otherwise user is kicked off after login
 RUN sed 's/session\s*required\s*pam_loginuid.so/session optional pam_loginuid.so/g' -i /etc/pam.d/sshd

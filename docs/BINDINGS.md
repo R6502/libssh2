@@ -1,5 +1,10 @@
-libssh2 bindings
-================
+<!--
+Copyright (C) The libssh2 project and its contributors.
+
+SPDX-License-Identifier: BSD-3-Clause
+-->
+
+# libssh2 bindings
 
 Creative people have written bindings or interfaces for various environments
 and programming languages. Using one of these bindings allows you to take

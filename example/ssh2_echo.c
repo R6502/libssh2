@@ -8,14 +8,24 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
+#define LIBSSH2_DISABLE_DEPRECATION  /* FIXME */
+
 #include "libssh2_setup.h"
 #include <libssh2.h>
 
-#ifdef HAVE_SYS_SOCKET_H
+#include <stdio.h>
+
+#ifndef LIBSSH2_NO_DEPRECATED
+
+#include <stdlib.h>
+#include <string.h>
+
+#ifndef _WIN32
 #include <sys/socket.h>
-#endif
-#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif
+#ifdef HAVE_SYS_SELECT_H
+#include <sys/select.h>
 #endif
 #ifdef HAVE_NETINET_IN_H
 #include <netinet/in.h>
@@ -23,10 +33,9 @@
 #ifdef HAVE_ARPA_INET_H
 #include <arpa/inet.h>
 #endif
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#if !defined(_WIN32) || defined(__MINGW32__)
+#include <sys/time.h>  /* for timeval */
+#endif
 
 static const char *hostname = "127.0.0.1";
 static const char *commandline = "cat";
@@ -70,8 +79,6 @@ static int waitsocket(libssh2_socket_t socket_fd, LIBSSH2_SESSION *session)
     return rc;
 }
 
-#define BUFSIZE 32000
-
 int main(int argc, char *argv[])
 {
     uint32_t hostaddr;
@@ -82,7 +89,6 @@ int main(int argc, char *argv[])
     LIBSSH2_SESSION *session = NULL;
     LIBSSH2_CHANNEL *channel;
     int exitcode = 0;
-    char *exitsignal = NULL;
     size_t len;
     LIBSSH2_KNOWNHOSTS *nh;
     int type;
@@ -97,15 +103,12 @@ int main(int argc, char *argv[])
     }
 #endif
 
-    if(argc > 1) {
+    if(argc > 1)
         hostname = argv[1];  /* must be ip address only */
-    }
-    if(argc > 2) {
+    if(argc > 2)
         username = argv[2];
-    }
-    if(argc > 3) {
+    if(argc > 3)
         password = argv[3];
-    }
 
     rc = libssh2_init(0);
     if(rc) {
@@ -127,7 +130,7 @@ int main(int argc, char *argv[])
     sin.sin_family = AF_INET;
     sin.sin_port = htons(22);
     sin.sin_addr.s_addr = hostaddr;
-    if(connect(sock, (struct sockaddr*)(&sin), sizeof(struct sockaddr_in))) {
+    if(connect(sock, (struct sockaddr *)&sin, sizeof(struct sockaddr_in))) {
         fprintf(stderr, "failed to connect.\n");
         goto shutdown;
     }
@@ -142,11 +145,12 @@ int main(int argc, char *argv[])
     /* tell libssh2 we want it all done non-blocking */
     libssh2_session_set_blocking(session, 0);
 
-    /* ... start it up. This will trade welcome banners, exchange keys,
+    /* ... start it up. This trades welcome banners, exchange keys,
      * and setup crypto, compression, and MAC layers
      */
     while((rc = libssh2_session_handshake(session, sock)) ==
-          LIBSSH2_ERROR_EAGAIN);
+          LIBSSH2_ERROR_EAGAIN)
+        ;
     if(rc) {
         fprintf(stderr, "Failure establishing SSH session: %d\n", rc);
         goto shutdown;
@@ -154,8 +158,8 @@ int main(int argc, char *argv[])
 
     nh = libssh2_knownhost_init(session);
     if(!nh) {
-        /* eeek, do cleanup here */
-        return 2;
+        exitcode = 2;
+        goto shutdown;
     }
 
     /* read all hosts from here */
@@ -171,7 +175,7 @@ int main(int argc, char *argv[])
         struct libssh2_knownhost *host;
         int check = libssh2_knownhost_checkp(nh, hostname, 22,
                                              fingerprint, len,
-                                             LIBSSH2_KNOWNHOST_TYPE_PLAIN|
+                                             LIBSSH2_KNOWNHOST_TYPE_PLAIN |
                                              LIBSSH2_KNOWNHOST_KEYENC_RAW,
                                              &host);
 
@@ -185,18 +189,20 @@ int main(int argc, char *argv[])
          *****/
     }
     else {
-        /* eeek, do cleanup here */
-        return 3;
+        libssh2_knownhost_free(nh);
+        exitcode = 3;
+        goto shutdown;
     }
     libssh2_knownhost_free(nh);
 
-    if(strlen(password) != 0) {
+    if(strlen(password)) {
         /* We could authenticate via password */
         while((rc = libssh2_userauth_password(session, username, password)) ==
-              LIBSSH2_ERROR_EAGAIN);
+              LIBSSH2_ERROR_EAGAIN)
+            ;
         if(rc) {
             fprintf(stderr, "Authentication by password failed.\n");
-            return 1;
+            goto shutdown;
         }
     }
 
@@ -215,10 +221,10 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Error\n");
         return 1;
     }
+
     while((rc = libssh2_channel_exec(channel, commandline)) ==
-          LIBSSH2_ERROR_EAGAIN) {
+          LIBSSH2_ERROR_EAGAIN)
         waitsocket(sock, session);
-    }
     if(rc) {
         fprintf(stderr, "exec error\n");
         return 1;
@@ -226,16 +232,17 @@ int main(int argc, char *argv[])
     else {
         LIBSSH2_POLLFD *fds = NULL;
         int running = 1;
-        size_t bufsize = BUFSIZE;
-        char buffer[BUFSIZE];
+        char buffer[32000];
+        size_t bufsize = sizeof(buffer);
         size_t totsize = 1500000;
         size_t totwritten = 0;
         size_t totread = 0;
         int rereads = 0;
         int rewrites = 0;
-        int i;
+        char *exitsignal = NULL;
+        size_t i;
 
-        for(i = 0; i < BUFSIZE; i++)
+        for(i = 0; i < sizeof(buffer); i++)
             buffer[i] = 'A';
 
         fds = malloc(sizeof(LIBSSH2_POLLFD));
@@ -262,7 +269,7 @@ int main(int argc, char *argv[])
 
                 if(n == LIBSSH2_ERROR_EAGAIN) {
                     rereads++;
-                    fprintf(stderr, "will read again\n");
+                    fprintf(stderr, "read again\n");
                 }
                 else if(n < 0) {
                     fprintf(stderr, "read failed\n");
@@ -287,7 +294,7 @@ int main(int argc, char *argv[])
 
                     if(n == LIBSSH2_ERROR_EAGAIN) {
                         rewrites++;
-                        fprintf(stderr, "will write again\n");
+                        fprintf(stderr, "write again\n");
                     }
                     else if(n < 0) {
                         fprintf(stderr, "write failed\n");
@@ -297,9 +304,8 @@ int main(int argc, char *argv[])
                         totwritten += (size_t)n;
                         fprintf(stderr, "wrote %ld bytes (%lu in total)",
                                 (long)n, (unsigned long)totwritten);
-                        if(left >= bufsize && (size_t)n != bufsize) {
+                        if(left >= bufsize && (size_t)n != bufsize)
                             fprintf(stderr, " PARTIAL");
-                        }
                         fprintf(stderr, "\n");
                     }
                 }
@@ -307,16 +313,16 @@ int main(int argc, char *argv[])
                     /* all data written, send EOF */
                     rc = libssh2_channel_send_eof(channel);
 
-                    if(rc == LIBSSH2_ERROR_EAGAIN) {
-                        fprintf(stderr, "will send eof again\n");
-                    }
+                    if(rc == LIBSSH2_ERROR_EAGAIN)
+                        fprintf(stderr, "send eof again\n");
                     else if(rc < 0) {
                         fprintf(stderr, "send eof failed\n");
                         return 1;
                     }
                     else {
                         fprintf(stderr, "sent eof\n");
-                        /* we're done writing, stop listening for OUT events */
+                        /* we are done writing, stop listening for OUT
+                           events */
                         fds[0].events &=
                             ~(unsigned long)LIBSSH2_POLLFD_POLLOUT;
                     }
@@ -324,15 +330,15 @@ int main(int argc, char *argv[])
             }
 
             if(fds[0].revents & LIBSSH2_POLLFD_CHANNEL_CLOSED) {
-                if(!act) /* don't leave loop until we have read all data */
+                if(!act) /* do not leave loop until we have read all data */
                     running = 0;
             }
         } while(running);
 
         exitcode = 127;
+
         while((rc = libssh2_channel_close(channel)) == LIBSSH2_ERROR_EAGAIN)
             waitsocket(sock, session);
-
         if(rc == 0) {
             exitcode = libssh2_channel_get_exit_status(channel);
             libssh2_channel_get_exit_signal(channel, &exitsignal,
@@ -344,7 +350,6 @@ int main(int argc, char *argv[])
                     exitsignal ? exitsignal : "none");
 
         libssh2_channel_free(channel);
-        channel = NULL;
 
         fprintf(stderr, "\nrereads: %d rewrites: %d totwritten %lu\n",
                 rereads, rewrites, (unsigned long)totwritten);
@@ -365,7 +370,7 @@ shutdown:
     }
 
     if(sock != LIBSSH2_INVALID_SOCKET) {
-        shutdown(sock, 2);
+        shutdown(sock, 2 /* SHUT_RDWR */);
         LIBSSH2_SOCKET_CLOSE(sock);
     }
 
@@ -379,3 +384,13 @@ shutdown:
 
     return exitcode;
 }
+
+#else
+
+int main(void)
+{
+    printf("Required deprecated libssh2 API not built in.\n");
+    return 1;
+}
+
+#endif /* !LIBSSH2_NO_DEPRECATED */
