@@ -128,6 +128,7 @@
 #    define SSH2_CRYPTO_ENGINE_NAME "BoringSSL"
 #  elif !defined(USE_OPENSSL_3)
 #    define SSH2_CRYPTO_ENGINE_NAME "OpenSSL/1.1.1"
+#    define USE_OPENSSL111
 #  else
 #    define SSH2_CRYPTO_ENGINE_NAME "OpenSSL"
 #  endif
@@ -343,10 +344,9 @@ typedef enum {
 #define ssh2_bn                      BIGNUM
 #define ssh2_bn_init()               BN_new()
 #define ssh2_bn_set_word(bn, word)   !BN_set_word(bn, word)
-#define ssh2_bn_from_bin(bn, bin, l) (BN_bin2bn(bin, (int)(l), bn) ? 0 : -1)
 #define ssh2_bn_to_bin(bn, bin)      (BN_bn2bin(bn, bin) <= 0)
-#define ssh2_bn_bytes(bn)            BN_num_bytes(bn)
-#define ssh2_bn_bits(bn)             BN_num_bits(bn)
+#define ssh2_bn_bytes(bn)            ((size_t)BN_num_bytes(bn))
+#define ssh2_bn_bits(bn)             ((size_t)BN_num_bits(bn))
 #define ssh2_bn_free(bn)             BN_clear_free(bn)
 
 #define ssh2_dh_ctx                  BIGNUM *

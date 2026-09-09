@@ -340,22 +340,18 @@ static int kex_finish(LIBSSH2_SESSION *session,
     if(session->local.comp && session->local.comp->dtor)
         session->local.comp->dtor(session, 1, &session->local.comp_abstract);
 
-    if(session->local.comp && session->local.comp->init) {
-        if(session->local.comp->init(session, 1,
-                                     &session->local.comp_abstract))
-            return LIBSSH2_ERROR_KEX_FAILURE;
-    }
+    if(session->local.comp && session->local.comp->init &&
+       session->local.comp->init(session, 1, &session->local.comp_abstract))
+        return LIBSSH2_ERROR_KEX_FAILURE;
     ssh2_deb((session, LIBSSH2_TRACE_KEX,
               "Client to Server compression initialized"));
 
     if(session->remote.comp && session->remote.comp->dtor)
         session->remote.comp->dtor(session, 0, &session->remote.comp_abstract);
 
-    if(session->remote.comp && session->remote.comp->init) {
-        if(session->remote.comp->init(session, 0,
-                                      &session->remote.comp_abstract))
-            return LIBSSH2_ERROR_KEX_FAILURE;
-    }
+    if(session->remote.comp && session->remote.comp->init &&
+       session->remote.comp->init(session, 0, &session->remote.comp_abstract))
+        return LIBSSH2_ERROR_KEX_FAILURE;
     ssh2_deb((session, LIBSSH2_TRACE_KEX,
               "Server to Client compression initialized"));
 
@@ -431,8 +427,7 @@ static int kex_diffie_hellman_sha(LIBSSH2_SESSION *session,
         exchange_state->ctx = ssh2_bn_ctx_new();
         ssh2_dh_init(&exchange_state->x);
         exchange_state->e = ssh2_bn_init(); /* g^x mod p */
-        exchange_state->f = ssh2_bn_init_from_bin(); /* g^(Random from
-                                                            server) mod p */
+        exchange_state->f = NULL; /* g^(Random from server) mod p */
         exchange_state->k = ssh2_bn_init(); /* The shared secret: f^x mod p */
 
         /* Zero the whole thing out */
@@ -561,7 +556,7 @@ static int kex_diffie_hellman_sha(LIBSSH2_SESSION *session,
             goto clean_exit;
         }
 
-        if(ssh2_bn_from_bin(exchange_state->f,
+        if(ssh2_bn_from_bin(&exchange_state->f,
                             exchange_state->f_value,
                             exchange_state->f_value_len)) {
             ret = ssh2_err(session, LIBSSH2_ERROR_HOSTKEY_INIT,
@@ -765,8 +760,7 @@ static int kex_method_diffie_hellman_group1_sha1_key_exchange(
 
     if(key_state->state == ssh2_NB_state_idle) {
         /* g == 2 */
-        key_state->p = ssh2_bn_init_from_bin(); /* SSH2 defined value
-                                                       (p_value) */
+        key_state->p = NULL; /* SSH2 defined value (p_value) */
         key_state->g = ssh2_bn_init(); /* SSH2 defined value (2) */
 
         /* Initialize P and G */
@@ -775,7 +769,7 @@ static int kex_method_diffie_hellman_group1_sha1_key_exchange(
                            "Failed to allocate key state g.");
             goto clean_exit;
         }
-        if(!key_state->p || ssh2_bn_from_bin(key_state->p, p_value, 128)) {
+        if(ssh2_bn_from_bin(&key_state->p, p_value, 128)) {
             ret = ssh2_err(session, LIBSSH2_ERROR_ALLOC,
                            "Failed to allocate key state p.");
             goto clean_exit;
@@ -860,8 +854,7 @@ static int kex_method_diffie_hellman_group14_key_exchange(
     int ret;
 
     if(key_state->state == ssh2_NB_state_idle) {
-        key_state->p = ssh2_bn_init_from_bin(); /* SSH2 defined value
-                                                       (p_value) */
+        key_state->p = NULL; /* SSH2 defined value (p_value) */
         key_state->g = ssh2_bn_init(); /* SSH2 defined value (2) */
 
         /* g == 2 */
@@ -871,8 +864,7 @@ static int kex_method_diffie_hellman_group14_key_exchange(
                            "Failed to allocate key state g.");
             goto clean_exit;
         }
-        else if(!key_state->p ||
-                ssh2_bn_from_bin(key_state->p, p_value, 256)) {
+        else if(ssh2_bn_from_bin(&key_state->p, p_value, 256)) {
             ret = ssh2_err(session, LIBSSH2_ERROR_ALLOC,
                            "Failed to allocate key state p.");
             goto clean_exit;
@@ -972,8 +964,7 @@ static int kex_method_diffie_hellman_group16_sha512_key_exchange(
     int ret;
 
     if(key_state->state == ssh2_NB_state_idle) {
-        key_state->p = ssh2_bn_init_from_bin(); /* SSH2 defined value
-                                                       (p_value) */
+        key_state->p = NULL; /* SSH2 defined value (p_value) */
         key_state->g = ssh2_bn_init(); /* SSH2 defined value (2) */
 
         /* g == 2 */
@@ -983,7 +974,7 @@ static int kex_method_diffie_hellman_group16_sha512_key_exchange(
                            "Failed to allocate key state g.");
             goto clean_exit;
         }
-        if(!key_state->p || ssh2_bn_from_bin(key_state->p, p_value, 512)) {
+        if(ssh2_bn_from_bin(&key_state->p, p_value, 512)) {
             ret = ssh2_err(session, LIBSSH2_ERROR_ALLOC,
                            "Failed to allocate key state p.");
             goto clean_exit;
@@ -1105,8 +1096,7 @@ static int kex_method_diffie_hellman_group18_sha512_key_exchange(
     int ret;
 
     if(key_state->state == ssh2_NB_state_idle) {
-        key_state->p = ssh2_bn_init_from_bin(); /* SSH2 defined value
-                                                       (p_value) */
+        key_state->p = NULL; /* SSH2 defined value (p_value) */
         key_state->g = ssh2_bn_init(); /* SSH2 defined value (2) */
 
         /* g == 2 */
@@ -1116,8 +1106,7 @@ static int kex_method_diffie_hellman_group18_sha512_key_exchange(
                            "Failed to allocate key state g.");
             goto clean_exit;
         }
-        else if(!key_state->p ||
-                ssh2_bn_from_bin(key_state->p, p_value, 1024)) {
+        else if(ssh2_bn_from_bin(&key_state->p, p_value, 1024)) {
             ret = ssh2_err(session, LIBSSH2_ERROR_ALLOC,
                            "Failed to allocate key state p.");
             goto clean_exit;
@@ -1154,8 +1143,8 @@ static int kex_method_diffie_hellman_group_exchange_sha1_key_exchange(
     int rc;
 
     if(key_state->state == ssh2_NB_state_idle) {
-        key_state->p = ssh2_bn_init_from_bin();
-        key_state->g = ssh2_bn_init_from_bin();
+        key_state->p = NULL;
+        key_state->g = NULL;
         /* Ask for a P and G pair */
         key_state->request[0] = SSH_MSG_KEX_DH_GEX_REQUEST;
         ssh2_htonu32(key_state->request + 1, SSH2_DH_GEX_MINGROUP);
@@ -1200,7 +1189,7 @@ static int kex_method_diffie_hellman_group_exchange_sha1_key_exchange(
         size_t p_len, g_len;
         unsigned char *p, *g;
         struct string_buf buf;
-        int bits;
+        size_t bits;
 
         if(key_state->data_len < 9) {
             ret = ssh2_err(session, LIBSSH2_ERROR_PROTO,
@@ -1226,12 +1215,12 @@ static int kex_method_diffie_hellman_group_exchange_sha1_key_exchange(
             goto dh_gex_clean_exit;
         }
 
-        if(ssh2_bn_from_bin(key_state->p, p, p_len)) {
+        if(ssh2_bn_from_bin(&key_state->p, p, p_len)) {
             ret = ssh2_err(session, LIBSSH2_ERROR_PROTO, "Invalid DH-SHA1 p");
             goto dh_gex_clean_exit;
         }
 
-        bits = (int)ssh2_bn_bits(key_state->p);
+        bits = ssh2_bn_bits(key_state->p);
         if(bits < SSH2_DH_GEX_MINGROUP ||
            bits > SSH2_DH_GEX_MAXGROUP) {
             ret = ssh2_err(session, LIBSSH2_ERROR_PROTO,
@@ -1239,7 +1228,7 @@ static int kex_method_diffie_hellman_group_exchange_sha1_key_exchange(
             goto dh_gex_clean_exit;
         }
 
-        if(ssh2_bn_from_bin(key_state->g, g, g_len)) {
+        if(ssh2_bn_from_bin(&key_state->g, g, g_len)) {
             ret = ssh2_err(session, LIBSSH2_ERROR_PROTO, "Invalid DH-SHA1 g");
             goto dh_gex_clean_exit;
         }
@@ -1274,8 +1263,8 @@ static int kex_method_diffie_hellman_group_exchange_sha256_key_exchange(
     int rc;
 
     if(key_state->state == ssh2_NB_state_idle) {
-        key_state->p = ssh2_bn_init_from_bin();
-        key_state->g = ssh2_bn_init_from_bin();
+        key_state->p = NULL;
+        key_state->g = NULL;
         /* Ask for a P and G pair */
         key_state->request[0] = SSH_MSG_KEX_DH_GEX_REQUEST;
         ssh2_htonu32(key_state->request + 1, SSH2_DH_GEX_MINGROUP);
@@ -1321,7 +1310,7 @@ static int kex_method_diffie_hellman_group_exchange_sha256_key_exchange(
         unsigned char *p, *g;
         size_t p_len, g_len;
         struct string_buf buf;
-        int bits;
+        size_t bits;
 
         if(key_state->data_len < 9) {
             ret = ssh2_err(session, LIBSSH2_ERROR_PROTO,
@@ -1347,13 +1336,13 @@ static int kex_method_diffie_hellman_group_exchange_sha256_key_exchange(
             goto dh_gex_clean_exit;
         }
 
-        if(ssh2_bn_from_bin(key_state->p, p, p_len)) {
+        if(ssh2_bn_from_bin(&key_state->p, p, p_len)) {
             ret = ssh2_err(session, LIBSSH2_ERROR_PROTO,
                            "Invalid DH-SHA256 p");
             goto dh_gex_clean_exit;
         }
 
-        bits = (int)ssh2_bn_bits(key_state->p);
+        bits = ssh2_bn_bits(key_state->p);
         if(bits < SSH2_DH_GEX_MINGROUP ||
            bits > SSH2_DH_GEX_MAXGROUP) {
             ret = ssh2_err(session, LIBSSH2_ERROR_PROTO,
@@ -1361,7 +1350,7 @@ static int kex_method_diffie_hellman_group_exchange_sha256_key_exchange(
             goto dh_gex_clean_exit;
         }
 
-        if(ssh2_bn_from_bin(key_state->g, g, g_len)) {
+        if(ssh2_bn_from_bin(&key_state->g, g, g_len)) {
             ret = ssh2_err(session, LIBSSH2_ERROR_PROTO,
                            "Invalid DH-SHA256 g");
             goto dh_gex_clean_exit;
@@ -1821,7 +1810,7 @@ static int kex_method_ecdh_key_exchange(
 
         ret = kex_ecdh_sha2_nistp(session, curve, key_state->data,
                                   key_state->data_len,
-                                  (unsigned char *)key_state->public_key_oct,
+                                  key_state->public_key_oct,
                                   key_state->public_key_oct_len,
                                   key_state->private_key,
                                   &key_state->exchange_state);
@@ -2169,7 +2158,7 @@ static int kex_method_mlkem_nistp_key_exchange(
 
     if(key_state->state == ssh2_NB_state_sent2) {
         ret = kex_mlkem_nistp(session, key_state->data, key_state->data_len,
-                              (unsigned char *)key_state->public_key_oct,
+                              key_state->public_key_oct,
                               key_state->public_key_oct_len,
                               key_state->private_key,
                               key_state->mlkem_public_key,
@@ -3223,17 +3212,16 @@ static int kex_agree_hostkey(LIBSSH2_SESSION *session, size_t kex_flags,
 
                 /* OK so far, but does it suit our purposes? (Encrypting
                    vs Signing) */
-                if((kex_flags & KEX_METHOD_FLAG_REQ_ENC_HOSTKEY) == 0 ||
-                   method->encrypt) {
-                    /* Either this hostkey can do encryption or this kex
-                       does not require it */
-                    if((kex_flags & KEX_METHOD_FLAG_REQ_SIGN_HOSTKEY) == 0 ||
-                       method->sig_verify) {
+                if(((kex_flags & KEX_METHOD_FLAG_REQ_ENC_HOSTKEY) == 0 ||
+                    method->encrypt) &&
+                   /* Either this hostkey can do encryption or this kex
+                      does not require it */
+                   ((kex_flags & KEX_METHOD_FLAG_REQ_SIGN_HOSTKEY) == 0 ||
+                    method->sig_verify)) {
                         /* Either this hostkey can do signing or this kex
                            does not require it */
-                        session->hostkey = method;
-                        return 0;
-                    }
+                    session->hostkey = method;
+                    return 0;
                 }
             }
 
@@ -3245,21 +3233,19 @@ static int kex_agree_hostkey(LIBSSH2_SESSION *session, size_t kex_flags,
     while(hostkeyp && *hostkeyp && (*hostkeyp)->name) {
         s = ssh2_kex_agree_instr(hostkey, hostkey_len,
                                  (*hostkeyp)->name, strlen((*hostkeyp)->name));
-        if(s) {
-            /* OK so far, but does it suit our purposes? (Encrypting vs
-               Signing) */
-            if((kex_flags & KEX_METHOD_FLAG_REQ_ENC_HOSTKEY) == 0 ||
-               (*hostkeyp)->encrypt) {
-                /* Either this hostkey can do encryption or this kex
-                   does not require it */
-                if((kex_flags & KEX_METHOD_FLAG_REQ_SIGN_HOSTKEY) == 0 ||
-                   (*hostkeyp)->sig_verify) {
-                    /* Either this hostkey can do signing or this kex
-                       does not require it */
-                    session->hostkey = *hostkeyp;
-                    return 0;
-                }
-            }
+        if(s &&
+           /* OK so far, but does it suit our purposes? (Encrypting vs
+              Signing) */
+           ((kex_flags & KEX_METHOD_FLAG_REQ_ENC_HOSTKEY) == 0 ||
+            (*hostkeyp)->encrypt) &&
+           /* Either this hostkey can do encryption or this kex
+              does not require it */
+           ((kex_flags & KEX_METHOD_FLAG_REQ_SIGN_HOSTKEY) == 0 ||
+            (*hostkeyp)->sig_verify)) {
+            /* Either this hostkey can do signing or this kex
+               does not require it */
+            session->hostkey = *hostkeyp;
+            return 0;
         }
         hostkeyp++;
     }
@@ -3320,21 +3306,20 @@ static int kex_agree_kex_hostkey(LIBSSH2_SESSION *session,
     while(*kexp && (*kexp)->name) {
         s = ssh2_kex_agree_instr(kex, kex_len,
                                  (*kexp)->name, strlen((*kexp)->name));
-        if(s) {
-            /* We have agreed on a key exchange method,
-             * Can we agree on a hostkey that works with this kex?
-             */
-            if(kex_agree_hostkey(session, (*kexp)->flags, hostkey,
-                                 hostkey_len) == 0) {
-                session->kex = *kexp;
-                if(session->burn_optimistic_kexinit && kex == s)
-                    /* Server sent an optimistic packet, and client agrees
-                     * with preference cancel burning the first KEX_INIT
-                     * packet that comes in */
-                    session->burn_optimistic_kexinit = 0;
+        if(s &&
+           /* We have agreed on a key exchange method,
+            * Can we agree on a hostkey that works with this kex?
+            */
+           kex_agree_hostkey(session, (*kexp)->flags, hostkey,
+                             hostkey_len) == 0) {
+            session->kex = *kexp;
+            if(session->burn_optimistic_kexinit && kex == s)
+                /* Server sent an optimistic packet, and client agrees
+                 * with preference cancel burning the first KEX_INIT
+                 * packet that comes in */
+                session->burn_optimistic_kexinit = 0;
 
-                return 0;
-            }
+            return 0;
         }
         kexp++;
     }
@@ -3700,18 +3685,17 @@ int ssh2_kex_exchange(LIBSSH2_SESSION *session, int reexchange,
     else
         key_state->state = ssh2_NB_state_sent2;
 
-    if(rc == 0 && session->kex && session->kex->exchange_keys) {
-        if(key_state->state == ssh2_NB_state_sent2) {
-            retcode = session->kex->exchange_keys(session,
-                                                  &key_state->key_state_low);
-            if(retcode == LIBSSH2_ERROR_EAGAIN) {
-                session->state &= ~SSH2_STATE_KEX_ACTIVE;
-                return retcode;
-            }
-            else if(retcode)
-                rc = ssh2_err(session, LIBSSH2_ERROR_KEY_EXCHANGE_FAILURE,
-                              "Unrecoverable error exchanging keys");
+    if(rc == 0 && session->kex && session->kex->exchange_keys &&
+       key_state->state == ssh2_NB_state_sent2) {
+        retcode = session->kex->exchange_keys(session,
+                                              &key_state->key_state_low);
+        if(retcode == LIBSSH2_ERROR_EAGAIN) {
+            session->state &= ~SSH2_STATE_KEX_ACTIVE;
+            return retcode;
         }
+        else if(retcode)
+            rc = ssh2_err(session, LIBSSH2_ERROR_KEY_EXCHANGE_FAILURE,
+                          "Unrecoverable error exchanging keys");
     }
 
     /* Done with kexinit buffers */

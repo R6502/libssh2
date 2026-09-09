@@ -194,7 +194,7 @@ int ssh2_ecdh_gen_k(ssh2_bn **k, LIBSSH2_SESSION *session,
                     const unsigned char *server_public_key,
                     size_t server_public_key_len);
 
-ssh2_curve_type ssh2_ecdsa_get_curve_type(ssh2_ecdsa_ctx *ec_ctx);
+ssh2_curve_type ssh2_ecdsa_get_curve_type(const ssh2_ecdsa_ctx *ec_ctx);
 
 int ssh2_ecdsa_create_key(ssh2_ec_key **ec_ctx, LIBSSH2_SESSION *session,
                           unsigned char **out_public_key_octal,
@@ -305,19 +305,18 @@ void ssh2_bn_free(ssh2_bn *bn);
 #ifndef ssh2_bn_set_word
 int ssh2_bn_set_word(ssh2_bn *bn, uint32_t word);
 size_t ssh2_bn_bits(const ssh2_bn *bn);
-int ssh2_bn_from_bin(ssh2_bn *bn, const unsigned char *bin, size_t len);
 int ssh2_bn_to_bin(const ssh2_bn *bn, unsigned char *bin);
 #endif
-#ifndef ssh2_bn_init_from_bin
-#define ssh2_bn_init_from_bin()  ssh2_bn_init()
+#ifndef ssh2_bn_from_bin
+int ssh2_bn_from_bin(ssh2_bn **bn, const unsigned char *bin, size_t len);
 #endif
 
 void ssh2_dh_init(ssh2_dh_ctx *dhctx);
-int ssh2_dh_key_pair(ssh2_dh_ctx *dhctx, ssh2_bn *pub, ssh2_bn *g,
-                     ssh2_bn *p, int group_order, ssh2_bn_ctx *bnctx);
+int ssh2_dh_key_pair(ssh2_dh_ctx *dhctx, ssh2_bn *pub, const ssh2_bn *g,
+                     const ssh2_bn *p, int group_order, ssh2_bn_ctx *bnctx);
 int ssh2_dh_validate(const ssh2_bn *f, const ssh2_bn *p); /* for unit tests */
-int ssh2_dh_secret(ssh2_dh_ctx *dhctx, ssh2_bn *secret, ssh2_bn *f,
-                   ssh2_bn *p, ssh2_bn_ctx *bnctx);
+int ssh2_dh_secret(ssh2_dh_ctx *dhctx, ssh2_bn *secret,
+                   const ssh2_bn *f, const ssh2_bn *p, ssh2_bn_ctx *bnctx);
 void ssh2_dh_dtor(ssh2_dh_ctx *dhctx);
 
 #if LIBSSH2_RSA

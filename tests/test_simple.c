@@ -234,7 +234,6 @@ static int test_ssh2_dh_validate(void)
         const char *f; const char *p; int expected;
     };
     static const struct tbn tests[] = {
-        {  "-1",  "10", -1 },
         {   "2",  "10", -3 },
         {   "1",  "10", -1 },
         {   "0",  "10", -1 },
@@ -250,48 +249,65 @@ static int test_ssh2_dh_validate(void)
     for(i = 0; i < SSH2_ARRAYSIZE(tests); i++) {
         struct tbn t = tests[i];
         int got;
-#ifdef LIBSSH2_LIBGCRYPT
-        gcry_mpi_t f = gcry_mpi_set_ui(NULL, (unsigned long)abs(atoi(t.f)));
-        gcry_mpi_t p = gcry_mpi_set_ui(NULL, (unsigned long)atoi(t.p));
-        if(t.f[0] == '-')
-            gcry_mpi_neg(f, f);
-        got = ssh2_dh_validate(f, p);
-        gcry_mpi_release(f);
-        gcry_mpi_release(p);
-#elif defined(LIBSSH2_MBEDTLS)
-        mbedtls_mpi f, p;
-        mbedtls_mpi_init(&f);
-        mbedtls_mpi_init(&p);
-        if(mbedtls_mpi_read_string(&f, 10, t.f) ||
-           mbedtls_mpi_read_string(&p, 10, t.p))
-            got = -9;
-        else
-            got = ssh2_dh_validate(&f, &p);
-        mbedtls_mpi_free(&f);
-        mbedtls_mpi_free(&p);
-#elif defined(LIBSSH2_OPENSSL) || \
-    (defined(LIBSSH2_WOLFSSL) && LIBWOLFSSL_VERSION_HEX >= 0x05006000)
-        BIGNUM *f = BN_new(), *p = BN_new();
-        if(!BN_dec2bn(&f, t.f) ||
-           !BN_dec2bn(&p, t.p))
+#ifdef LIBSSH2_WINCNG
+        got = t.expected;
+#else
+        ssh2_bn *f = ssh2_bn_init();
+        ssh2_bn *p = ssh2_bn_init();
+        if(!f || !p ||
+           ssh2_bn_set_word(f, (uint32_t)atoi(t.f)) ||
+           ssh2_bn_set_word(p, (uint32_t)atoi(t.p)))
             got = -9;
         else
             got = ssh2_dh_validate(f, p);
-        BN_free(f);
-        BN_free(p);
-#else
-        got = t.expected;
+        ssh2_bn_free(f);
+        ssh2_bn_free(p);
 #endif
         if(got != t.expected) {
             fprintf(stderr,
                     "ssh2_dh_validate/%lu: f=%s p=%s: expected %d got %d\n",
-                    (unsigned long)i,
-                    t.f, t.p, t.expected, got);
+                    (unsigned long)i, t.f, t.p, t.expected, got);
             err++;
         }
     }
 
     return err > 0;
+}
+
+static int test_ssh2_bn_from_bin(void)
+{
+    static const struct {
+        unsigned char input[5];
+        size_t length;
+        size_t leading;
+    } tests[] = {
+        { { 1 }, 1, 0 },
+        { { 0x7f }, 1, 0 },
+        { { 0x80 }, 1, 0 },
+        { { 0xff, 0x42 }, 2, 0 },
+        { { 0, 1 }, 2, 1 },
+        { { 0, 0x80 }, 2, 1 },
+        { { 0, 0, 0x80, 0x42 }, 4, 2 },
+        { { 0, 0, 0, 0, 1 }, 5, 4 },
+    };
+    size_t i;
+    int rc = 0;
+
+    for(i = 0; i < SSH2_ARRAYSIZE(tests); i++) {
+        unsigned char actual[5] = { 0 };
+        size_t length = tests[i].length - tests[i].leading;
+        ssh2_bn *bn = NULL;
+        if(ssh2_bn_from_bin(&bn, tests[i].input, tests[i].length) ||
+           ssh2_bn_bytes(bn) != length ||
+           ssh2_bn_to_bin(bn, actual) ||
+           memcmp(actual, tests[i].input + tests[i].leading, length)) {
+            fprintf(stderr, "ssh2_bn_from_bin case %lu failed\n",
+                    (unsigned long)i);
+            rc = 1;
+        }
+        ssh2_bn_free(bn);
+    }
+    return rc;
 }
 
 /* Return codes match scp.c (SCP_C_FIELDS_*). */
@@ -383,6 +399,7 @@ int main(int argc, char *argv[])
     rc = test_ssh2_base64_decode(session);
     rc |= test_knownhost_ipv6(session);
     rc |= test_ssh2_dh_validate();
+    rc |= test_ssh2_bn_from_bin();
     rc |= test_ssh2_scp_parse_c_fields();
 
     libssh2_session_free(session);

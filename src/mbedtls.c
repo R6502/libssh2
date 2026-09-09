@@ -373,6 +373,20 @@ void ssh2_bn_free(ssh2_bn *bn)
     }
 }
 
+int ssh2_bn_from_bin(ssh2_bn **bn, const unsigned char *bin, size_t len)
+{
+    if(!bn || !bin || !len)
+        return -1;
+
+    if(!*bn) {
+        *bn = ssh2_bn_init();
+        if(!*bn)
+            return -1;
+    }
+
+    return mbedtls_mpi_read_binary(*bn, bin, len);
+}
+
 static int mbed_bn_random(ssh2_bn *bn, int bits, int top, int bottom)
 {
     size_t len;
@@ -700,7 +714,7 @@ static unsigned char *mbed_gen_publickey_from_rsa(LIBSSH2_SESSION *session,
 static int mbed_pub_priv_key(LIBSSH2_SESSION *session, char **method,
                              unsigned char **pubkeydata,
                              size_t *pubkeydata_len,
-                             mbedtls_pk_context *pkey)
+                             const mbedtls_pk_context *pkey)
 {
     char *method_buf = NULL;
     unsigned char *key = NULL;
@@ -806,8 +820,8 @@ void ssh2_dh_init(ssh2_dh_ctx *dhctx)
     *dhctx = ssh2_bn_init(); /* Random from client */
 }
 
-int ssh2_dh_key_pair(ssh2_dh_ctx *dhctx, ssh2_bn *pub, ssh2_bn *g,
-                     ssh2_bn *p, int group_order, ssh2_bn_ctx *bnctx)
+int ssh2_dh_key_pair(ssh2_dh_ctx *dhctx, ssh2_bn *pub, const ssh2_bn *g,
+                     const ssh2_bn *p, int group_order, ssh2_bn_ctx *bnctx)
 {
     (void)bnctx;
 
@@ -863,8 +877,8 @@ int ssh2_dh_validate(const ssh2_bn *f, const ssh2_bn *p)
     return 0;
 }
 
-int ssh2_dh_secret(ssh2_dh_ctx *dhctx, ssh2_bn *secret, ssh2_bn *f,
-                   ssh2_bn *p, ssh2_bn_ctx *bnctx)
+int ssh2_dh_secret(ssh2_dh_ctx *dhctx, ssh2_bn *secret,
+                   const ssh2_bn *f, const ssh2_bn *p, ssh2_bn_ctx *bnctx)
 {
     (void)bnctx;
 
@@ -1084,7 +1098,7 @@ cleanup:
 /*
  * returns key curve type that maps to ssh2_curve_type
  */
-ssh2_curve_type ssh2_ecdsa_get_curve_type(ssh2_ecdsa_ctx *ec_ctx)
+ssh2_curve_type ssh2_ecdsa_get_curve_type(const ssh2_ecdsa_ctx *ec_ctx)
 {
     return (ssh2_curve_type)ec_ctx->MBEDTLS_PRIVATE(grp).id;
 }

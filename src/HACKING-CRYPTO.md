@@ -274,9 +274,8 @@ Initializes the Diffie-Hellman context at `dhctx`. No effective context
 creation needed here.
 
 ```c
-int ssh2_dh_key_pair(ssh2_dh_ctx *dhctx, ssh2_bn *public,
-                     ssh2_bn *g, ssh2_bn *p, int group_order,
-                     ssh2_bn_ctx *bnctx);
+int ssh2_dh_key_pair(ssh2_dh_ctx *dhctx, ssh2_bn *public, const ssh2_bn *g,
+                     const ssh2_bn *p, int group_order, ssh2_bn_ctx *bnctx);
 ```
 Generates a Diffie-Hellman key pair using base `g`, prime `p` and the given
 `group_order`. Can use the given big number context `bnctx` if needed.
@@ -286,7 +285,7 @@ the public key is returned in `public`.
 
 ```c
 int ssh2_dh_secret(ssh2_dh_ctx *dhctx, ssh2_bn *secret,
-                   ssh2_bn *f, ssh2_bn *p, ssh2_bn_ctx *bnctx)
+                   const ssh2_bn *f, const ssh2_bn *p, ssh2_bn_ctx *bnctx)
 ```
 Computes the Diffie-Hellman secret from the previously created context
 `*dhctx`, the public key `f` from the other party and the same prime `p` used
@@ -331,15 +330,6 @@ ssh2_bn *ssh2_bn_init(void);
 Creates a multiple precision number (preset to zero).
 
 ```c
-ssh2_bn *ssh2_bn_init_from_bin(void);
-```
-
-Create a multiple precision number intended to be set by the
-`ssh2_bn_from_bin()` function (see below). Unlike `ssh2_bn_init()`, this code
-may be a dummy initializer if the `ssh2_bn_from_bin()` actually allocates the
-number. Returns a value of type `ssh2_bn *`.
-
-```c
 void ssh2_bn_free(ssh2_bn *bn);
 ```
 Destroys the multiple precision number at `bn`.
@@ -359,17 +349,17 @@ Returns the number of bits of multiple precision number at `bn`.
 int ssh2_bn_set_word(ssh2_bn *bn, uint32_t word);
 ```
 Sets the value of `bn` to `word`.
-Returns 1 on success, 0 otherwise.
+Returns 0 on success, non-zero on failure.
 
 ```c
-ssh2_bn *ssh2_bn_from_bin(ssh2_bn *bn, const unsigned char *bin, size_t len);
+int ssh2_bn_from_bin(ssh2_bn **bn, const unsigned char *bin, size_t len);
 ```
 
 Converts the positive integer in big-endian form of length `len` at `bin` into
-an `ssh2_bn` and place it in `bn`. If `bn` is NULL, a new `ssh2_bn` is
+an `ssh2_bn` and place it in `*bn`. If `*bn` is NULL, a new `ssh2_bn` is
 created.
 
-Returns a pointer to target `ssh2_bn` or NULL if error.
+Returns 0 on success, non-zero on failure.
 
 ```c
 int ssh2_bn_to_bin(ssh2_bn *bn, unsigned char *bin);
@@ -723,7 +713,7 @@ Return 0 if OK, else -1.
 This procedure is already prototyped in `crypto.h`.
 
 ```c
-ssh2_curve_type ssh2_ecdsa_get_curve_type(ssh2_ecdsa_ctx *ec_ctx);
+ssh2_curve_type ssh2_ecdsa_get_curve_type(const ssh2_ecdsa_ctx *ec_ctx);
 ```
 Returns the curve type associated with given context.
 This procedure is already prototyped in `crypto.h`.
