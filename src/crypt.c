@@ -2,38 +2,31 @@
  * Copyright (C) Sara Golemon <sarag@libssh2.org>
  * All rights reserved.
  *
- * Redistribution and use in source and binary forms,
- * with or without modification, are permitted provided
- * that the following conditions are met:
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- *   Redistributions of source code must retain the above
- *   copyright notice, this list of conditions and the
- *   following disclaimer.
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
  *
- *   Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials
- *   provided with the distribution.
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
  *
- *   Neither the name of the copyright holder nor the names
- *   of any other contributors may be used to endorse or
- *   promote products derived from this software without
- *   specific prior written permission.
+ * 3. Neither the name of the copyright holder nor the names of its
+ *    contributors may be used to endorse or promote products derived from this
+ *    software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
- * USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
- * OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -85,6 +78,7 @@ struct crypt_ctx {
     int encrypt;
     SSH2_CIPHER_T(algo);
     ssh2_cipher_ctx h;
+    int privkeyfile;  /* for chachapoly decrypt */
     struct chachapoly_ctx chachapoly_ctx;
 };
 
@@ -94,22 +88,23 @@ static int crypt_init(LIBSSH2_SESSION *session,
                       const struct crypt_method *method,
                       unsigned char *iv, int *free_iv,
                       unsigned char *secret, int *free_secret,
-                      int encrypt, void **abstract)
+                      int encrypt, int privkeyfile, void **abstract)
 {
     struct crypt_ctx *ctx = SSH2_ALLOC(session, sizeof(struct crypt_ctx));
     if(!ctx)
         return LIBSSH2_ERROR_ALLOC;
 
     ctx->encrypt = encrypt;
+    ctx->privkeyfile = privkeyfile;
     ctx->algo = method->algo;
     if(ssh2_cipher_init(&ctx->h, ctx->algo, iv, secret, encrypt)) {
         SSH2_FREE(session, ctx);
-        return -1;
+        return -1;  /* fail */
     }
     *abstract = ctx;
     *free_iv = 1;
     *free_secret = 1;
-    return 0;
+    return 0;  /* success */
 }
 
 static int crypt_encrypt(LIBSSH2_SESSION *session,
@@ -317,12 +312,12 @@ static int crypt_init_arcfour128(LIBSSH2_SESSION *session,
                                  const struct crypt_method *method,
                                  unsigned char *iv, int *free_iv,
                                  unsigned char *secret, int *free_secret,
-                                 int encrypt, void **abstract)
+                                 int encrypt, int privkeyfile, void **abstract)
 {
     int rc;
 
     rc = crypt_init(session, method, iv, free_iv, secret, free_secret,
-                    encrypt, abstract);
+                    encrypt, privkeyfile, abstract);
     if(rc == 0) {
         struct crypt_ctx *cctx = *(struct crypt_ctx **)abstract;
         unsigned char block[8];
@@ -390,7 +385,8 @@ static int crypt_init_chacha20_poly(LIBSSH2_SESSION *session,
                                     const struct crypt_method *method,
                                     unsigned char *iv, int *free_iv,
                                     unsigned char *secret, int *free_secret,
-                                    int encrypt, void **abstract)
+                                    int encrypt, int privkeyfile,
+                                    void **abstract)
 {
     struct crypt_ctx *ctx = SSH2_ALLOC(session, sizeof(struct crypt_ctx));
 
@@ -400,17 +396,18 @@ static int crypt_init_chacha20_poly(LIBSSH2_SESSION *session,
         return LIBSSH2_ERROR_ALLOC;
 
     ctx->encrypt = encrypt;
+    ctx->privkeyfile = privkeyfile;
     ctx->algo = method->algo;
 
     if(chachapoly_init(&ctx->chachapoly_ctx, secret, method->secret_len)) {
         SSH2_FREE(session, ctx);
-        return -1;
+        return -1;  /* fail */
     }
 
     *abstract = ctx;
     *free_iv = 1;
     *free_secret = 1;
-    return 0;
+    return 0;  /* success */
 }
 
 static int crypt_encrypt_chacha20_poly_buffer(LIBSSH2_SESSION *session,
@@ -437,20 +434,27 @@ static int crypt_encrypt_chacha20_poly_buffer(LIBSSH2_SESSION *session,
             ret = chachapoly_crypt(&ctx->chachapoly_ctx, seqno, buf, buf,
                                    buf_len - 4, 4, ctx->encrypt);
         }
-        else {
+        else if(!ctx->privkeyfile) {
             /* buf is full packet including size and auth tag but buf_len
                does not include size */
+            if(buf_len < 4)
+                return 1; /* too short to drop the size field below */
+
             ret = chachapoly_crypt(&ctx->chachapoly_ctx, seqno, buf, buf,
                                    buf_len, 4, ctx->encrypt);
 
-            /* the api expects the size field to already be removed
+            /* the API expects the size field to already be removed
                from the decrypted packet so we help it out */
             if(ret == 0)
                 memmove(buf, buf + 4, buf_len - 4);
         }
+        else
+            /* for private key decryption */
+            ret = chachapoly_crypt(&ctx->chachapoly_ctx, seqno, buf, buf,
+                                   buf_len, 0, ctx->encrypt);
     }
 
-    return (ret == 0) ? 0 : 1;
+    return ret == 0 ? 0 : 1;  /* success: 0, fail: 1 */
 }
 
 static int crypt_get_length_chacha20_poly(LIBSSH2_SESSION *session,
@@ -460,11 +464,14 @@ static int crypt_get_length_chacha20_poly(LIBSSH2_SESSION *session,
                                           unsigned int *len, void **abstract)
 {
     struct crypt_ctx *ctx = *(struct crypt_ctx **)abstract;
+    int ret;
 
     (void)session;
 
-    return chachapoly_get_length(&ctx->chachapoly_ctx, len, seqno, data,
-                                 data_size);
+    ret = chachapoly_get_length(&ctx->chachapoly_ctx, len, seqno, data,
+                                data_size);
+
+    return ret == 0 ? 0 : 1;  /* success: 0, fail: 1 */
 }
 
 static int crypt_dtor_chacha20_poly(LIBSSH2_SESSION *session, void **abstract)

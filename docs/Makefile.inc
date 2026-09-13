@@ -16,6 +16,7 @@ man_MANS = \
   libssh2_agent_userauth.3 \
   libssh2_banner_set.3 \
   libssh2_base64_decode.3 \
+  libssh2_build_options.3 \
   libssh2_channel_close.3 \
   libssh2_channel_direct_streamlocal_ex.3 \
   libssh2_channel_direct_tcpip.3 \
@@ -34,6 +35,7 @@ man_MANS = \
   libssh2_channel_get_exit_status.3 \
   libssh2_channel_handle_extended_data.3 \
   libssh2_channel_handle_extended_data2.3 \
+  libssh2_channel_has_exit_status.3 \
   libssh2_channel_ignore_extended_data.3 \
   libssh2_channel_open_ex.3 \
   libssh2_channel_open_session.3 \

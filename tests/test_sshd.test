@@ -55,8 +55,8 @@ fi
 echo "# sshd executable: '${SSHD}' (${ver})"
 
 # for our test clients:
-[ -z "${PRIVKEY:-}" ] && export PRIVKEY="${d}/key_rsa"
-[ -z "${PUBKEY:-}" ]  && export PUBKEY="${d}/key_rsa.pub"
+[ -z "${PRIVKEY:-}" ] && export PRIVKEY="${d}/keys/id_rsa_pem"
+[ -z "${PUBKEY:-}" ]  && export PUBKEY="${d}/keys/id_rsa_pem.pub"
 cakeys="${d}/openssh_server/ca_user_keys.pub"
 
 logfsrv="$(mktemp)"; readonly logfsrv
@@ -86,6 +86,8 @@ chmod go-rwx \
   -o 'PidFile sshd.pid' \
   -o "AuthorizedKeysFile ${PUBKEY} ${d}/openssh_server/authorized_keys" \
   -o "TrustedUserCAKeys ${cakeys}" \
+  -o "HostCertificate ${d}/openssh_server/ssh_host_ed25519_key-cert.pub" \
+  -o 'KbdInteractiveAuthentication yes' \
   -o 'PermitRootLogin yes' \
   -D \
   ${SSHD_FLAGS} &

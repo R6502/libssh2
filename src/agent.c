@@ -3,61 +3,49 @@
  * Copyright (C) Daniel Stenberg
  * All rights reserved.
  *
- * Redistribution and use in source and binary forms,
- * with or without modification, are permitted provided
- * that the following conditions are met:
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- *   Redistributions of source code must retain the above
- *   copyright notice, this list of conditions and the
- *   following disclaimer.
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
  *
- *   Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials
- *   provided with the distribution.
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
  *
- *   Neither the name of the copyright holder nor the names
- *   of any other contributors may be used to endorse or
- *   promote products derived from this software without
- *   specific prior written permission.
+ * 3. Neither the name of the copyright holder nor the names of its
+ *    contributors may be used to endorse or promote products derived from this
+ *    software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
- * USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
- * OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
 #include "libssh2_priv.h"
 
-#include <stdlib.h>  /* for getenv() */
-
-#ifdef HAVE_SYS_UN_H
-#include <sys/un.h>
-#else
-/* Use the existence of sys/un.h as a test if Unix domain socket is
-   supported.  winsock*.h define PF_UNIX/AF_UNIX but do not actually
-   support them. */
-#undef PF_UNIX
-#endif
-
-#if defined(_WIN32) && !defined(LIBSSH2_WINDOWS_UWP)
-#define HAVE_WIN32_AGENTS
-#endif
-
+#include "agent.h"
 #include "userauth.h"
 #include "session.h"
+
+#if defined(SSH2_AGENT_BACKEND_WIN32_OPENSSH) || \
+    defined(SSH2_AGENT_BACKEND_UNIX)
+#include <stdlib.h>  /* for getenv(), getenv_s(), _wgetenv_s() */
+#ifdef SSH2_AGENT_BACKEND_WIN32_OPENSSH
+#include <tchar.h>  /* for _tgetenv_s() */
+#endif
+#define OPENSSH_AUTH_SOCK "SSH_AUTH_SOCK"
+#endif
 
 /* Requests from client to agent for protocol 2 key operations */
 #define SSH2_AGENTC_REQUEST_IDENTITIES 11
@@ -147,14 +135,120 @@ struct _LIBSSH2_AGENT {
 
     char *identity_agent_path; /* Path to a custom identity agent socket */
 
-#ifdef HAVE_WIN32_AGENTS
+#ifdef SSH2_AGENT_BACKEND_WIN32_OPENSSH
     OVERLAPPED overlapped;
     HANDLE pipe;
     BOOL pending_io;
 #endif
 };
 
-#ifdef HAVE_WIN32_AGENTS /* Compile this via agent.c */
+#ifdef SSH2_AGENT_BACKEND_WIN32_PAGEANT
+/* Code to talk to Pageant was taken from PuTTY.
+ *
+ * Portions copyright Robert de Bath, Joris van Rantwijk, Delian
+ * Delchev, Andreas Schultz, Jeroen Massar, Wez Furlong, Nicolas
+ * Barry, Justin Bradford, Ben Harris, Malcolm Smith, Ahmad Khalifa,
+ * Markus Kuhn, Colin Watson, and CORE SDI S.A.
+ */
+#define PAGEANT_COPYDATA_ID 0x804e50ba /* random goop */
+
+static int agent_connect_pageant(LIBSSH2_AGENT *agent)
+{
+    HWND hwnd;
+    hwnd = FindWindow(TEXT("Pageant"), TEXT("Pageant"));
+    if(!hwnd)
+        return ssh2_err(agent->session, LIBSSH2_ERROR_AGENT_PROTOCOL,
+                        "failed connecting agent");
+    agent->fd = 0; /* Mark as the connection has been established */
+    return LIBSSH2_ERROR_NONE;
+}
+
+static int agent_transact_pageant(LIBSSH2_AGENT *agent,
+                                  struct agent_transaction_ctx *transctx)
+{
+    HWND hwnd;
+    char mapname[23];
+    HANDLE filemap;
+    unsigned char *p;
+    unsigned char *p2;
+    LRESULT id;
+    COPYDATASTRUCT cds;
+
+    if(!transctx || transctx->request_len > AGENT_MAX_MSGLEN - 4)
+        return ssh2_err(agent->session, LIBSSH2_ERROR_INVAL, "illegal input");
+
+    hwnd = FindWindow(TEXT("Pageant"), TEXT("Pageant"));
+    if(!hwnd)
+        return ssh2_err(agent->session, LIBSSH2_ERROR_AGENT_PROTOCOL,
+                        "found no pageant");
+
+    ssh2_snprintf(mapname, sizeof(mapname),
+                  "PageantRequest%08lx", GetCurrentThreadId());
+    filemap = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
+                                 0, AGENT_MAX_MSGLEN, mapname);
+
+    if(!filemap || filemap == INVALID_HANDLE_VALUE)
+        return ssh2_err(agent->session, LIBSSH2_ERROR_AGENT_PROTOCOL,
+                        "failed setting up pageant filemap");
+
+    p2 = p = MapViewOfFile(filemap, FILE_MAP_WRITE, 0, 0, 0);
+    if(!p || !p2) {
+        CloseHandle(filemap);
+        return ssh2_err(agent->session, LIBSSH2_ERROR_AGENT_PROTOCOL,
+                        "failed to open pageant filemap for writing");
+    }
+
+    ssh2_store_str(&p2, transctx->request, transctx->request_len);
+
+    cds.dwData = PAGEANT_COPYDATA_ID;
+    cds.cbData = (DWORD)(1 + strlen(mapname));
+    cds.lpData = mapname;
+
+    id = SendMessage(hwnd, WM_COPYDATA, (WPARAM)NULL, (LPARAM)&cds);
+    if(id > 0) {
+        transctx->response_len = ssh2_ntohu32(p);
+        if(transctx->response_len > AGENT_MAX_MSGLEN - 4) {
+            UnmapViewOfFile(p);
+            CloseHandle(filemap);
+            return ssh2_err(agent->session, LIBSSH2_ERROR_AGENT_PROTOCOL,
+                            "agent response too large");
+        }
+        transctx->response = SSH2_ALLOC(agent->session,
+                                        transctx->response_len);
+        if(!transctx->response) {
+            UnmapViewOfFile(p);
+            CloseHandle(filemap);
+            return ssh2_err(agent->session, LIBSSH2_ERROR_ALLOC,
+                            "agent malloc failed");
+        }
+        memcpy(transctx->response, p + 4, transctx->response_len);
+    }
+    else {
+        UnmapViewOfFile(p);
+        CloseHandle(filemap);
+        return ssh2_err(agent->session, LIBSSH2_ERROR_AGENT_PROTOCOL,
+                        "pageant did not handle message");
+    }
+
+    UnmapViewOfFile(p);
+    CloseHandle(filemap);
+    return LIBSSH2_ERROR_NONE;
+}
+
+static int agent_disconnect_pageant(LIBSSH2_AGENT *agent)
+{
+    agent->fd = LIBSSH2_INVALID_SOCKET;
+    return LIBSSH2_ERROR_NONE;
+}
+
+static struct agent_ops agent_ops_pageant = {
+    agent_connect_pageant,
+    agent_transact_pageant,
+    agent_disconnect_pageant
+};
+#endif /* SSH2_AGENT_BACKEND_WIN32_PAGEANT */
+
+#ifdef SSH2_AGENT_BACKEND_WIN32_OPENSSH
 
 /* Code to talk to OpenSSH was taken and modified from the Win32 port of
  * Portable OpenSSH by the PowerShell team. Commit
@@ -187,9 +281,14 @@ struct _LIBSSH2_AGENT {
  * SSH2 implementation,
  * Copyright (C) 2000 Markus Friedl.  All rights reserved.
  *
+ * Copyright (C) 2015 Microsoft Corp.
+ * All rights reserved
+ * Microsoft openssh win32 port
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
+ *
  * 1. Redistributions of source code must retain the above copyright
  *    notice, this list of conditions and the following disclaimer.
  * 2. Redistributions in binary form must reproduce the above copyright
@@ -206,65 +305,73 @@ struct _LIBSSH2_AGENT {
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Copyright (C) 2015 Microsoft Corp.
- * All rights reserved
- *
- * Microsoft openssh win32 port
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- * notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- * notice, this list of conditions and the following disclaimer in the
- * documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-
-#define WIN32_OPENSSH_AGENT_SOCK "\\\\.\\pipe\\openssh-ssh-agent"
 
 static int agent_connect_openssh(LIBSSH2_AGENT *agent)
 {
     int ret = LIBSSH2_ERROR_NONE;
-    const char *path;
+    LPTSTR path = NULL;
+    int path_to_free = 0;
     HANDLE pipe = INVALID_HANDLE_VALUE;
     HANDLE event = NULL;
 
-    path = agent->identity_agent_path;
-    if(!path) {
-        path = getenv("SSH_AUTH_SOCK");
+    if(agent->identity_agent_path) {
+#ifdef UNICODE
+        int len = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+                                      agent->identity_agent_path, -1, NULL, 0);
+        if(len <= 0) {
+            ret = LIBSSH2_ERROR_INVAL;
+            goto cleanup;
+        }
+        if(len > 32767) {
+            ret = LIBSSH2_ERROR_OUT_OF_BOUNDARY;
+            goto cleanup;
+        }
+        path = SSH2_ALLOC(agent->session, len * sizeof(TCHAR));
+        if(!path) {
+            ret = LIBSSH2_ERROR_ALLOC;
+            goto cleanup;
+        }
+        path_to_free = 1;
+        if(!MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+                                agent->identity_agent_path, -1, path, len)) {
+            ret = LIBSSH2_ERROR_INVAL;
+            goto cleanup;
+        }
+#else
+        path = agent->identity_agent_path;
+#endif
+    }
+    else {
+        size_t len = 0;
+        if(!_tgetenv_s(&len, path, 0, _TEXT(OPENSSH_AUTH_SOCK)) &&
+           len > 0 && len <= 32767) {
+            path = SSH2_ALLOC(agent->session, len * sizeof(TCHAR));
+            if(path) {
+                if(!_tgetenv_s(&len, path, len, _TEXT(OPENSSH_AUTH_SOCK)))
+                    path_to_free = 1;
+                else
+                    SSH2_SAFEFREE(agent->session, path);
+            }
+        }
         if(!path)
-            path = WIN32_OPENSSH_AGENT_SOCK;
+            path = SSH2_UNCONST(TEXT("\\\\.\\pipe\\openssh-ssh-agent"));
     }
 
     for(;;) {
         /* Non-blocking mode for agent connections is not implemented at
          * the point this was implemented. The code for Win32 OpenSSH
-         * should support non-blocking IO, but the code calling it does not
+         * should support non-blocking I/O, but the code calling it does not
          * support it as of yet.
          * When non-blocking I/O is implemented for the surrounding code,
          * uncomment the following line to enable support within the Win32
          * OpenSSH code.
          */
         /* !checksrc! disable BANNEDFUNC 1 */
-        pipe = CreateFileA(path, GENERIC_READ | GENERIC_WRITE, 0, NULL,
-                           OPEN_EXISTING,
-                           /* FILE_FLAG_OVERLAPPED | */
-                           SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION,
-                           NULL);
+        pipe = CreateFile(path, GENERIC_READ | GENERIC_WRITE, 0, NULL,
+                          OPEN_EXISTING, /* FILE_FLAG_OVERLAPPED | */
+                          SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION,
+                          NULL);
 
         if(pipe != INVALID_HANDLE_VALUE)
             break;
@@ -272,7 +379,7 @@ static int agent_connect_openssh(LIBSSH2_AGENT *agent)
             break;
 
         /* Wait up to 1 second for a pipe instance to become available */
-        if(!WaitNamedPipeA(path, 1000))
+        if(!WaitNamedPipe(path, 1000))
             break;
     }
 
@@ -288,7 +395,7 @@ static int agent_connect_openssh(LIBSSH2_AGENT *agent)
         goto cleanup;
     }
 
-    event = CreateEventA(NULL, TRUE, FALSE, NULL);
+    event = CreateEvent(NULL, TRUE, FALSE, NULL);
     if(!event) {
         ret = ssh2_err(agent->session, LIBSSH2_ERROR_AGENT_PROTOCOL,
                        "unable to create async I/O event");
@@ -306,6 +413,8 @@ cleanup:
         CloseHandle(event);
     if(pipe != INVALID_HANDLE_VALUE)
         CloseHandle(pipe);
+    if(path_to_free && path)
+        SSH2_FREE(agent->session, path);
     return ret;
 }
 
@@ -316,11 +425,14 @@ cleanup:
     int rc;                                                            \
                                                                        \
     while(*(total) < (length)) {                                       \
-        if(!(agent)->pending_io)                                       \
-            ret = func((agent)->pipe, (char *)(buffer) + *(total),     \
-                       (DWORD)((length) - *(total)),                   \
-                       &bytes_transferred,                             \
-                       &(agent)->overlapped);                          \
+        if(!(agent)->pending_io) {                                     \
+            ret = (func)((agent)->pipe, (char *)(buffer) + *(total),   \
+                         (DWORD)((length) - *(total)),                 \
+                         &bytes_transferred,                           \
+                         &(agent)->overlapped);                        \
+            if(ret && !bytes_transferred)                              \
+                return LIBSSH2_ERROR_SOCKET_DISCONNECT;                \
+        }                                                              \
         else                                                           \
             ret = GetOverlappedResult((agent)->pipe,                   \
                                       &(agent)->overlapped,            \
@@ -401,10 +513,15 @@ static int agent_transact_openssh(LIBSSH2_AGENT *agent,
                             "agent recv failed");
 
         transctx->response_len = ssh2_ntohu32(buf);
+        if(transctx->response_len > AGENT_MAX_MSGLEN - 4) {
+            return ssh2_err(agent->session, LIBSSH2_ERROR_AGENT_PROTOCOL,
+                            "agent response too large");
+        }
         transctx->response = SSH2_ALLOC(agent->session,
-                                           transctx->response_len);
+                                        transctx->response_len);
         if(!transctx->response)
-            return LIBSSH2_ERROR_ALLOC;
+            return ssh2_err(agent->session, LIBSSH2_ERROR_ALLOC,
+                            "agent malloc failed");
 
         transctx->state = agent_NB_state_response_length_received;
     }
@@ -429,7 +546,7 @@ static int agent_disconnect_openssh(LIBSSH2_AGENT *agent)
 {
     if(!CancelIo(agent->pipe))
         return ssh2_err(agent->session, LIBSSH2_ERROR_SOCKET_DISCONNECT,
-                        "failed to cancel pending IO of agent pipe");
+                        "failed to cancel pending I/O of agent pipe");
     if(!CloseHandle(agent->overlapped.hEvent))
         return ssh2_err(agent->session, LIBSSH2_ERROR_SOCKET_DISCONNECT,
                         "failed to close handle to async I/O event");
@@ -452,9 +569,9 @@ static struct agent_ops agent_ops_openssh = {
     agent_disconnect_openssh
 };
 
-#endif /* HAVE_WIN32_AGENTS */
+#endif /* SSH2_AGENT_BACKEND_WIN32_OPENSSH */
 
-#ifdef PF_UNIX
+#ifdef SSH2_AGENT_BACKEND_UNIX
 static int agent_connect_unix(LIBSSH2_AGENT *agent)
 {
     const char *path;
@@ -463,13 +580,13 @@ static int agent_connect_unix(LIBSSH2_AGENT *agent)
 
     path = agent->identity_agent_path;
     if(!path) {
-        path = getenv("SSH_AUTH_SOCK");
+        path = getenv(OPENSSH_AUTH_SOCK);
         if(!path)
             return ssh2_err(agent->session, LIBSSH2_ERROR_BAD_USE,
                             "no auth sock variable");
     }
 
-    agent->fd = socket(PF_UNIX, SOCK_STREAM, 0);
+    agent->fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if(agent->fd < 0)
         return ssh2_err(agent->session, LIBSSH2_ERROR_BAD_SOCKET,
                         "failed creating socket");
@@ -485,7 +602,7 @@ static int agent_connect_unix(LIBSSH2_AGENT *agent)
     memcpy(s_un.sun_path, path, plen);
     s_un.sun_path[plen] = '\0';
 
-    if(connect(agent->fd, (struct sockaddr *)(&s_un), sizeof(s_un)) != 0) {
+    if(connect(agent->fd, (struct sockaddr *)&s_un, sizeof(s_un)) != 0) {
         close(agent->fd);
         return ssh2_err(agent->session, LIBSSH2_ERROR_AGENT_PROTOCOL,
                         "failed connecting with agent");
@@ -494,22 +611,24 @@ static int agent_connect_unix(LIBSSH2_AGENT *agent)
     return LIBSSH2_ERROR_NONE;
 }
 
-#define RECV_SEND_ALL(func, socket, buffer, length, flags, abstract)    \
-    do {                                                                \
-        size_t finished = 0;                                            \
-                                                                        \
-        while(finished < (length)) {                                    \
-            ssize_t rc;                                                 \
-            rc = func(socket,                                           \
-                      (char *)(buffer) + finished, (length) - finished, \
-                      flags, abstract);                                 \
-            if(rc < 0)                                                  \
-                return rc;                                              \
-                                                                        \
-            finished += rc;                                             \
-        }                                                               \
-                                                                        \
-        return finished;                                                \
+#define RECV_SEND_ALL(func, socket, buffer, length, flags, abstract)      \
+    do {                                                                  \
+        size_t finished = 0;                                              \
+                                                                          \
+        while(finished < (length)) {                                      \
+            ssize_t rc;                                                   \
+            rc = (func)(socket,                                           \
+                        (char *)(buffer) + finished, (length) - finished, \
+                        flags, abstract);                                 \
+            if(rc < 0)                                                    \
+                return rc;                                                \
+            else if(!rc)                                                  \
+                return LIBSSH2_ERROR_SOCKET_DISCONNECT;                   \
+                                                                          \
+            finished += rc;                                               \
+        }                                                                 \
+                                                                          \
+        return finished;                                                  \
     } while(0)
 
 static ssize_t agent_send_all(LIBSSH2_SEND_FUNC(func), libssh2_socket_t socket,
@@ -571,10 +690,15 @@ static int agent_transact_unix(LIBSSH2_AGENT *agent,
                             "agent recv failed");
         }
         transctx->response_len = ssh2_ntohu32(buf);
+        if(transctx->response_len > AGENT_MAX_MSGLEN - 4) {
+            return ssh2_err(agent->session, LIBSSH2_ERROR_AGENT_PROTOCOL,
+                            "agent response too large");
+        }
         transctx->response = SSH2_ALLOC(agent->session,
-                                           transctx->response_len);
+                                        transctx->response_len);
         if(!transctx->response)
-            return LIBSSH2_ERROR_ALLOC;
+            return ssh2_err(agent->session, LIBSSH2_ERROR_ALLOC,
+                            "agent malloc failed");
 
         transctx->state = agent_NB_state_response_length_received;
     }
@@ -601,7 +725,9 @@ static int agent_disconnect_unix(LIBSSH2_AGENT *agent)
     if(close(agent->fd) == -1)
         return ssh2_err(agent->session, LIBSSH2_ERROR_SOCKET_DISCONNECT,
                         "failed closing the agent socket");
+
     agent->fd = LIBSSH2_INVALID_SOCKET;
+
     return LIBSSH2_ERROR_NONE;
 }
 
@@ -610,127 +736,21 @@ static struct agent_ops agent_ops_unix = {
     agent_transact_unix,
     agent_disconnect_unix
 };
-#endif /* PF_UNIX */
-
-#ifdef HAVE_WIN32_AGENTS
-/* Code to talk to Pageant was taken from PuTTY.
- *
- * Portions copyright Robert de Bath, Joris van Rantwijk, Delian
- * Delchev, Andreas Schultz, Jeroen Massar, Wez Furlong, Nicolas
- * Barry, Justin Bradford, Ben Harris, Malcolm Smith, Ahmad Khalifa,
- * Markus Kuhn, Colin Watson, and CORE SDI S.A.
- */
-#define PAGEANT_COPYDATA_ID 0x804e50ba /* random goop */
-#define PAGEANT_MAX_MSGLEN  8192
-
-static int agent_connect_pageant(LIBSSH2_AGENT *agent)
-{
-    HWND hwnd;
-    hwnd = FindWindowA("Pageant", "Pageant");
-    if(!hwnd)
-        return ssh2_err(agent->session, LIBSSH2_ERROR_AGENT_PROTOCOL,
-                        "failed connecting agent");
-    agent->fd = 0; /* Mark as the connection has been established */
-    return LIBSSH2_ERROR_NONE;
-}
-
-static int agent_transact_pageant(LIBSSH2_AGENT *agent,
-                                  struct agent_transaction_ctx *transctx)
-{
-    HWND hwnd;
-    char mapname[23];
-    HANDLE filemap;
-    unsigned char *p;
-    unsigned char *p2;
-    LRESULT id;
-    COPYDATASTRUCT cds;
-
-    if(!transctx || 4 + transctx->request_len > PAGEANT_MAX_MSGLEN)
-        return ssh2_err(agent->session, LIBSSH2_ERROR_INVAL, "illegal input");
-
-    hwnd = FindWindowA("Pageant", "Pageant");
-    if(!hwnd)
-        return ssh2_err(agent->session, LIBSSH2_ERROR_AGENT_PROTOCOL,
-                        "found no pageant");
-
-    ssh2_snprintf(mapname, sizeof(mapname),
-                  "PageantRequest%08x", (unsigned)GetCurrentThreadId());
-    filemap = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
-                                 0, PAGEANT_MAX_MSGLEN, mapname);
-
-    if(!filemap || filemap == INVALID_HANDLE_VALUE)
-        return ssh2_err(agent->session, LIBSSH2_ERROR_AGENT_PROTOCOL,
-                        "failed setting up pageant filemap");
-
-    p2 = p = MapViewOfFile(filemap, FILE_MAP_WRITE, 0, 0, 0);
-    if(!p || !p2) {
-        CloseHandle(filemap);
-        return ssh2_err(agent->session, LIBSSH2_ERROR_AGENT_PROTOCOL,
-                        "failed to open pageant filemap for writing");
-    }
-
-    ssh2_store_str(&p2, (const char *)transctx->request,
-                   transctx->request_len);
-
-    cds.dwData = PAGEANT_COPYDATA_ID;
-    cds.cbData = (DWORD)(1 + strlen(mapname));
-    cds.lpData = mapname;
-
-    id = SendMessage(hwnd, WM_COPYDATA, (WPARAM)NULL, (LPARAM)&cds);
-    if(id > 0) {
-        transctx->response_len = ssh2_ntohu32(p);
-        if(transctx->response_len > PAGEANT_MAX_MSGLEN - 4) {
-            UnmapViewOfFile(p);
-            CloseHandle(filemap);
-            return ssh2_err(agent->session, LIBSSH2_ERROR_AGENT_PROTOCOL,
-                            "agent setup fail");
-        }
-        transctx->response = SSH2_ALLOC(agent->session,
-                                        transctx->response_len);
-        if(!transctx->response) {
-            UnmapViewOfFile(p);
-            CloseHandle(filemap);
-            return ssh2_err(agent->session, LIBSSH2_ERROR_ALLOC,
-                            "agent malloc");
-        }
-        memcpy(transctx->response, p + 4, transctx->response_len);
-    }
-    else {
-        UnmapViewOfFile(p);
-        CloseHandle(filemap);
-        return ssh2_err(agent->session, LIBSSH2_ERROR_AGENT_PROTOCOL,
-                        "pageant did not handle message");
-    }
-
-    UnmapViewOfFile(p);
-    CloseHandle(filemap);
-    return LIBSSH2_ERROR_NONE;
-}
-
-static int agent_disconnect_pageant(LIBSSH2_AGENT *agent)
-{
-    agent->fd = LIBSSH2_INVALID_SOCKET;
-    return LIBSSH2_ERROR_NONE;
-}
-
-static struct agent_ops agent_ops_pageant = {
-    agent_connect_pageant,
-    agent_transact_pageant,
-    agent_disconnect_pageant
-};
-#endif /* HAVE_WIN32_AGENTS */
+#endif /* SSH2_AGENT_BACKEND_UNIX */
 
 static struct {
     const char *name;
     struct agent_ops *ops;
-} supported_backends[] = {
-#ifdef HAVE_WIN32_AGENTS
-    { "Pageant", &agent_ops_pageant },
-    { "OpenSSH", &agent_ops_openssh },
-#endif /* HAVE_WIN32_AGENTS */
-#ifdef PF_UNIX
-    { "Unix", &agent_ops_unix },
-#endif /* PF_UNIX */
+} agent_supported_backends[] = {
+#ifdef SSH2_AGENT_BACKEND_WIN32_PAGEANT
+    { SSH2_AGENT_BACKEND_WIN32_PAGEANT, &agent_ops_pageant },
+#endif
+#ifdef SSH2_AGENT_BACKEND_WIN32_OPENSSH
+    { SSH2_AGENT_BACKEND_WIN32_OPENSSH, &agent_ops_openssh },
+#endif
+#ifdef SSH2_AGENT_BACKEND_UNIX
+    { SSH2_AGENT_BACKEND_UNIX, &agent_ops_unix },
+#endif
     { NULL, NULL }
 };
 
@@ -742,10 +762,10 @@ static int agent_sign(LIBSSH2_SESSION *session,
     LIBSSH2_AGENT *agent = (LIBSSH2_AGENT *)(*abstract);
     struct agent_transaction_ctx *transctx = &agent->transctx;
     struct agent_publickey *identity = agent->identity;
-    size_t len, method_len, plain_len;
+    size_t len, method_len;
     unsigned char *s;
     int rc;
-    unsigned char *method_name = NULL;
+    char *method_name = NULL;
     uint32_t sign_flags = 0;
 
     len = 1 + 4 + 4 + 4;  /* fixed parts */
@@ -763,19 +783,16 @@ static int agent_sign(LIBSSH2_SESSION *session,
 
         *s++ = SSH2_AGENTC_SIGN_REQUEST;
         /* key blob */
-        ssh2_store_str(&s, (const char *)identity->external.blob,
-                       identity->external.blob_len);
+        ssh2_store_str(&s, identity->external.blob,
+                           identity->external.blob_len);
         /* data */
-        ssh2_store_str(&s, (const char *)data, data_len);
+        ssh2_store_str(&s, data, data_len);
 
         /* flags */
-        if(session->userauth_pblc_method_len > 0 &&
-           session->userauth_pblc_method) {
-            if(session->userauth_pblc_method_len == 12 &&
-               !memcmp(session->userauth_pblc_method, "rsa-sha2-512", 12))
+        if(session->userauth_pblc_method && *session->userauth_pblc_method) {
+            if(!strcmp(session->userauth_pblc_method, "rsa-sha2-512"))
                 sign_flags = SSH_AGENT_RSA_SHA2_512;
-            else if(session->userauth_pblc_method_len == 12 &&
-                    !memcmp(session->userauth_pblc_method, "rsa-sha2-256", 12))
+            else if(!strcmp(session->userauth_pblc_method, "rsa-sha2-256"))
                 sign_flags = SSH_AGENT_RSA_SHA2_256;
         }
         ssh2_store_u32(&s, sign_flags);
@@ -797,8 +814,7 @@ static int agent_sign(LIBSSH2_SESSION *session,
     if(rc)
         goto error;
 
-    SSH2_FREE(session, transctx->request);
-    transctx->request = NULL;
+    SSH2_SAFEFREE(session, transctx->request);
 
     len = transctx->response_len;
     s = transctx->response;
@@ -838,25 +854,29 @@ static int agent_sign(LIBSSH2_SESSION *session,
     }
 
     /* method name */
-    method_name = SSH2_ALLOC(session, method_len);
+    method_name = SSH2_ALLOC(session, method_len + 1);
     if(!method_name) {
         rc = LIBSSH2_ERROR_ALLOC;
         goto error;
     }
     memcpy(method_name, s, method_len);
+    method_name[method_len] = '\0';
     len -= method_len;
     s += method_len;
 
-    plain_len = plain_method((char *)session->userauth_pblc_method,
-                             session->userauth_pblc_method_len);
+    ssh2_userauth_plain_method(session->userauth_pblc_method);
+
+    if(method_len != strlen(method_name)) {
+        ssh2_deb((session, LIBSSH2_TRACE_KEX,
+                  "Agent sign method contains null byte"));
+        rc = LIBSSH2_ERROR_INVAL;
+        goto error;
+    }
 
     /* check to see if we match requested */
-    if((method_len != session->userauth_pblc_method_len &&
-        method_len != plain_len) ||
-       memcmp(method_name, session->userauth_pblc_method, method_len)) {
+    if(strcmp(method_name, session->userauth_pblc_method)) {
         ssh2_deb((session, LIBSSH2_TRACE_KEX, "Agent sign method %.*s",
                   (int)method_len, method_name));
-
         rc = LIBSSH2_ERROR_ALGO_UNSUPPORTED;
         goto error;
     }
@@ -888,11 +908,8 @@ error:
     if(method_name)
         SSH2_FREE(session, method_name);
 
-    SSH2_FREE(session, transctx->request);
-    transctx->request = NULL;
-
-    SSH2_FREE(session, transctx->response);
-    transctx->response = NULL;
+    SSH2_SAFEFREE(session, transctx->request);
+    SSH2_SAFEFREE(session, transctx->response);
 
     transctx->state = agent_NB_state_init;
 
@@ -901,11 +918,13 @@ error:
 
 static int agent_list_identities(LIBSSH2_AGENT *agent)
 {
+    static const unsigned char c = SSH2_AGENTC_REQUEST_IDENTITIES;
+
     struct agent_transaction_ctx *transctx = &agent->transctx;
-    ssize_t len, num_identities;
+    ssize_t len;
+    size_t num_identities;
     unsigned char *s;
     int rc;
-    static const unsigned char c = SSH2_AGENTC_REQUEST_IDENTITIES;
 
     /* Create a request to list identities */
     if(transctx->state == agent_NB_state_init) {
@@ -927,16 +946,14 @@ static int agent_list_identities(LIBSSH2_AGENT *agent)
 
     rc = agent->ops->transact(agent, transctx);
     if(rc) {
-        SSH2_FREE(agent->session, transctx->response);
-        transctx->response = NULL;
+        SSH2_SAFEFREE(agent->session, transctx->response);
         return rc;
     }
     transctx->request = NULL;
 
     len = transctx->response_len;
     s = transctx->response;
-    len--;
-    if(len < 0) {
+    if(len < 1) {
         rc = LIBSSH2_ERROR_AGENT_PROTOCOL;
         goto error;
     }
@@ -944,24 +961,29 @@ static int agent_list_identities(LIBSSH2_AGENT *agent)
         rc = LIBSSH2_ERROR_AGENT_PROTOCOL;
         goto error;
     }
+    len--;
     s++;
 
     /* Read the length of identities */
-    len -= 4;
-    if(len < 0) {
+    if(len < 4) {
         rc = LIBSSH2_ERROR_AGENT_PROTOCOL;
         goto error;
     }
     num_identities = ssh2_ntohu32(s);
+    len -= 4;
     s += 4;
+
+    if(num_identities > 1024) {
+        rc = LIBSSH2_ERROR_OUT_OF_BOUNDARY;
+        goto error;
+    }
 
     while(num_identities--) {
         struct agent_publickey *identity;
         size_t comment_len;
 
         /* Read the length of the blob */
-        len -= 4;
-        if(len < 0) {
+        if(len < 4) {
             rc = LIBSSH2_ERROR_AGENT_PROTOCOL;
             goto error;
         }
@@ -971,11 +993,16 @@ static int agent_list_identities(LIBSSH2_AGENT *agent)
             goto error;
         }
         identity->external.blob_len = ssh2_ntohu32(s);
+        len -= 4;
         s += 4;
 
+        if(identity->external.blob_len > (256 * 1024)) {
+            rc = LIBSSH2_ERROR_OUT_OF_BOUNDARY;
+            SSH2_FREE(agent->session, identity);
+            goto error;
+        }
         /* Read the blob */
-        len -= identity->external.blob_len;
-        if(len < 0) {
+        if((size_t)len < identity->external.blob_len) {
             rc = LIBSSH2_ERROR_AGENT_PROTOCOL;
             SSH2_FREE(agent->session, identity);
             goto error;
@@ -989,19 +1016,26 @@ static int agent_list_identities(LIBSSH2_AGENT *agent)
             goto error;
         }
         memcpy(identity->external.blob, s, identity->external.blob_len);
+        len -= identity->external.blob_len;
         s += identity->external.blob_len;
 
         /* Read the length of the comment */
-        len -= 4;
-        if(len < 0) {
+        if(len < 4) {
             rc = LIBSSH2_ERROR_AGENT_PROTOCOL;
             SSH2_FREE(agent->session, identity->external.blob);
             SSH2_FREE(agent->session, identity);
             goto error;
         }
         comment_len = ssh2_ntohu32(s);
+        len -= 4;
         s += 4;
 
+        if(comment_len > (64 * 1024)) {
+            rc = LIBSSH2_ERROR_OUT_OF_BOUNDARY;
+            SSH2_FREE(agent->session, identity->external.blob);
+            SSH2_FREE(agent->session, identity);
+            goto error;
+        }
         if(comment_len > (size_t)len) {
             rc = LIBSSH2_ERROR_AGENT_PROTOCOL;
             SSH2_FREE(agent->session, identity->external.blob);
@@ -1026,8 +1060,7 @@ static int agent_list_identities(LIBSSH2_AGENT *agent)
         ssh2_list_add(&agent->head, &identity->node);
     }
 error:
-    SSH2_FREE(agent->session, transctx->response);
-    transctx->response = NULL;
+    SSH2_SAFEFREE(agent->session, transctx->response);
 
     return ssh2_err(agent->session, rc, "agent list id failed");
 }
@@ -1079,7 +1112,7 @@ LIBSSH2_AGENT *libssh2_agent_init(LIBSSH2_SESSION *session)
     agent->identity_agent_path = NULL;
     ssh2_list_init(&agent->head);
 
-#ifdef HAVE_WIN32_AGENTS
+#ifdef SSH2_AGENT_BACKEND_WIN32_OPENSSH
     agent->pipe = INVALID_HANDLE_VALUE;
     memset(&agent->overlapped, 0, sizeof(OVERLAPPED));
     agent->pending_io = FALSE;
@@ -1096,8 +1129,8 @@ LIBSSH2_AGENT *libssh2_agent_init(LIBSSH2_SESSION *session)
 int libssh2_agent_connect(LIBSSH2_AGENT *agent)
 {
     int i, rc = LIBSSH2_ERROR_METHOD_NOT_SUPPORTED;
-    for(i = 0; supported_backends[i].name; i++) {
-        agent->ops = supported_backends[i].ops;
+    for(i = 0; agent_supported_backends[i].name; i++) {
+        agent->ops = agent_supported_backends[i].ops;
         rc = agent->ops->connect(agent);
         if(!rc)
             return LIBSSH2_ERROR_NONE;
@@ -1211,18 +1244,24 @@ int libssh2_agent_sign(LIBSSH2_AGENT *agent,
         return LIBSSH2_ERROR_BUFFER_TOO_SMALL;
 
     agent->session->userauth_pblc_method = SSH2_ALLOC(agent->session,
-                                                      method_len);
+                                                      method_len + 1);
     if(!agent->session->userauth_pblc_method)
         return LIBSSH2_ERROR_ALLOC;
 
-    agent->session->userauth_pblc_method_len = method_len;
     memcpy(agent->session->userauth_pblc_method, method, method_len);
+    agent->session->userauth_pblc_method[method_len] = '\0';
+
+    if(method_len != strlen(agent->session->userauth_pblc_method)) {
+        rc = ssh2_err(agent->session, LIBSSH2_ERROR_INVAL,
+                      "Identity method contains null byte");
+        goto cleanup;
+    }
 
     rc = agent_sign(agent->session, sig, s_len, data, d_len, &abstract);
 
-    SSH2_FREE(agent->session, agent->session->userauth_pblc_method);
-    agent->session->userauth_pblc_method = NULL;
-    agent->session->userauth_pblc_method_len = 0;
+cleanup:
+
+    SSH2_SAFEFREE(agent->session, agent->session->userauth_pblc_method);
 
     return rc;
 }
@@ -1261,10 +1300,8 @@ void libssh2_agent_free(LIBSSH2_AGENT *agent)
  */
 void libssh2_agent_set_identity_path(LIBSSH2_AGENT *agent, const char *path)
 {
-    if(agent->identity_agent_path) {
-        SSH2_FREE(agent->session, agent->identity_agent_path);
-        agent->identity_agent_path = NULL;
-    }
+    if(agent->identity_agent_path)
+        SSH2_SAFEFREE(agent->session, agent->identity_agent_path);
 
     if(path) {
         size_t path_len = strlen(path);

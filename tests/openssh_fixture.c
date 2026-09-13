@@ -1,38 +1,31 @@
 /* Copyright (C) Alexander Lamaison
  * All rights reserved.
  *
- * Redistribution and use in source and binary forms,
- * with or without modification, are permitted provided
- * that the following conditions are met:
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- *   Redistributions of source code must retain the above
- *   copyright notice, this list of conditions and the
- *   following disclaimer.
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
  *
- *   Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials
- *   provided with the distribution.
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
  *
- *   Neither the name of the copyright holder nor the names
- *   of any other contributors may be used to endorse or
- *   promote products derived from this software without
- *   specific prior written permission.
+ * 3. Neither the name of the copyright holder nor the names of its
+ *    contributors may be used to endorse or promote products derived from this
+ *    software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
- * USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
- * OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -40,9 +33,6 @@
 #include "session_fixture.h"
 #include "openssh_fixture.h"
 
-#ifdef HAVE_SYS_SOCKET_H
-#include <sys/socket.h>
-#endif
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
@@ -106,19 +96,19 @@ static int run_command_varg(char **output, const char *command, va_list args)
 #if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
-    if(ret < 0 || ret >= BUFSIZ) {
+    if(ret < 0 || (size_t)ret >= sizeof(command_buf)) {
         fprintf(stderr, "Unable to format command (%s)\n", command);
         return -1;
     }
 
-    /* Rewrite the command to redirect stderr to stdout to we can output it */
+    /* Rewrite the command to redirect stderr to stdout so we can output it */
     if(strlen(command_buf) + strlen(redirect_stderr) >= sizeof(buf)) {
         fprintf(stderr, "Unable to rewrite command (%s)\n", command);
         return -1;
     }
 
-    ret = ssh2_snprintf(buf, sizeof(buf), redirect_stderr, command_buf);
-    if(ret < 0 || ret >= BUFSIZ) {
+    ret = snprintf(buf, sizeof(buf), redirect_stderr, command_buf);
+    if(ret < 0 || (size_t)ret >= sizeof(buf)) {
         fprintf(stderr, "Unable to rewrite command (%s)\n", command);
         return -1;
     }
@@ -129,7 +119,7 @@ static int run_command_varg(char **output, const char *command, va_list args)
         fprintf(stderr, "Unable to execute command '%s'\n", command);
         return -1;
     }
-    buf[0] = 0;
+    buf[0] = '\0';
     buf_len = 0;
     while(buf_len < (sizeof(buf) - 1) &&
           fgets(&buf[buf_len], (int)(sizeof(buf) - buf_len), pipe))
@@ -144,8 +134,10 @@ static int run_command_varg(char **output, const char *command, va_list args)
         /* command output may contain a trailing newline, so we trim
          * whitespace here */
         size_t end = strlen(buf);
-        while(end > 0 && isspace((int)buf[end - 1]))
+        while(end > 0 && isspace((int)buf[end - 1])) {
             buf[end - 1] = '\0';
+            --end;
+        }
 
         *output = libssh2_strdup(buf);
     }
@@ -238,19 +230,19 @@ static int is_running_inside_a_container(void)
     return 0;
 #else
     static const char *cgroup_filename = "/proc/self/cgroup";
-    FILE *f;
+    FILE *fp;
     char line[256];
     int found = 0;
-    f = fopen(cgroup_filename, "r");
-    if(!f)
+    fp = fopen(cgroup_filename, "r");
+    if(!fp)
         return 0;  /* Do not go further, we are not in a container */
-    while(fgets(line, sizeof(line), f)) {
+    while(fgets(line, sizeof(line), fp)) {
         if(strstr(line, "docker")) {
             found = 1;
             break;
         }
     }
-    fclose(f);
+    fclose(fp);
     return found;
 #endif
 }
@@ -328,11 +320,7 @@ static void close_socket_to_container(libssh2_socket_t sock)
 {
     if(sock != LIBSSH2_INVALID_SOCKET) {
         shutdown(sock, 2 /* SHUT_RDWR */);
-#ifdef _WIN32
-        closesocket(sock);
-#else
-        close(sock);
-#endif
+        LIBSSH2_SOCKET_CLOSE(sock);
     }
 }
 

@@ -1,38 +1,31 @@
 /* Copyright (C) Alexander Lamaison
  * All rights reserved.
  *
- * Redistribution and use in source and binary forms,
- * with or without modification, are permitted provided
- * that the following conditions are met:
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- *   Redistributions of source code must retain the above
- *   copyright notice, this list of conditions and the
- *   following disclaimer.
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
  *
- *   Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials
- *   provided with the distribution.
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
  *
- *   Neither the name of the copyright holder nor the names
- *   of any other contributors may be used to endorse or
- *   promote products derived from this software without
- *   specific prior written permission.
+ * 3. Neither the name of the copyright holder nor the names of its
+ *    contributors may be used to endorse or promote products derived from this
+ *    software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
- * USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
- * OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -40,9 +33,6 @@
 #include "session_fixture.h"
 #include "openssh_fixture.h"
 
-#ifdef HAVE_SYS_SOCKET_H
-#include <sys/socket.h>
-#endif
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
@@ -70,23 +60,20 @@ static int connect_to_server(void)
     return LIBSSH2_ERROR_NONE;
 }
 
-/* List of crypto protocols for which tests are skipped */
+/* List of crypto algorithms for which tests are skipped */
 static char const *skip_crypt[] = {
-#ifdef LIBSSH2_MBEDTLS
-    /* Due to a bug with mbedTLS support, these crypt methods fail.
-       Until that bug is fixed, do not run them there to avoid this
-       known issue causing red tests.
-       See: https://github.com/libssh2/libssh2/issues/793 */
+#if !LIBSSH2_3DES
     "3des-cbc",
+#endif
+#if !LIBSSH2_AES_CTR
+    "aes128-ctr",
+    "aes192-ctr",
+    "aes256-ctr",
+#endif
+#if !LIBSSH2_AES_CBC
     "aes128-cbc",
     "aes192-cbc",
     "aes256-cbc",
-    "aes128-gcm@openssh.com",
-    "aes256-gcm@openssh.com",
-    "rijndael-cbc@lysator.liu.se",
-#endif
-#if !LIBSSH2_3DES
-    "3des-cbc",
 #endif
 #if !LIBSSH2_AES_GCM
     /* Support for AES-GCM hasn't been added to these back-ends yet */
@@ -96,11 +83,34 @@ static char const *skip_crypt[] = {
     NULL
 };
 
-/* List of MAC protocols for which tests are skipped */
+/* List of MAC algorithms for which tests are skipped */
 static char const *skip_mac[] = {
+#ifndef LIBSSH2_HMAC_SHA1_ENABLE
+    "hmac-sha1",
+    "hmac-sha1-etm@openssh.com",
+    "hmac-sha1-96",
+#endif
 #if !LIBSSH2_MD5
     "hmac-md5",
     "hmac-md5-96",
+#endif
+    NULL
+};
+
+/* List of HOSTKEY algorithms for which tests are skipped */
+static char const *skip_hostkey[] = {
+#if !LIBSSH2_ECDSA
+    "ecdsa-sha2-nistp256-cert-v01@openssh.com",
+#endif
+#if !LIBSSH2_RSA_SHA2
+    "rsa-sha2-256-cert-v01@openssh.com",
+    "rsa-sha2-512-cert-v01@openssh.com",
+#endif
+#if !LIBSSH2_RSA_SHA1
+    "ssh-rsa-cert-v01@openssh.com",
+#endif
+#if !LIBSSH2_ED25519
+    "ssh-ed25519-cert-v01@openssh.com",
 #endif
     NULL
 };
@@ -111,6 +121,7 @@ LIBSSH2_SESSION *start_session_fixture(int *skipped, int *err)
 
     const char *crypt = getenv("FIXTURE_TEST_CRYPT");
     const char *mac = getenv("FIXTURE_TEST_MAC");
+    const char *hostkey = getenv("FIXTURE_TEST_HOSTKEY");
 
     *skipped = 0;
     *err = LIBSSH2_ERROR_NONE;
@@ -139,6 +150,19 @@ LIBSSH2_SESSION *start_session_fixture(int *skipped, int *err)
         }
     }
 
+    if(hostkey) {
+        char const * const *sk;
+        for(sk = skip_hostkey; *sk; ++sk) {
+            if(!strcmp(*sk, hostkey)) {
+                fprintf(stderr,
+                        "unsupported HOSTKEY algorithm (%s) skipped.\n",
+                        hostkey);
+                *skipped = 1;
+                return NULL;
+            }
+        }
+    }
+
     rc = start_openssh_fixture();
     if(rc)
         return NULL;
@@ -156,36 +180,56 @@ LIBSSH2_SESSION *start_session_fixture(int *skipped, int *err)
     }
 
     if(getenv("FIXTURE_TRACE_ALL_CONNECT")) {
-        libssh2_trace(connected_session, ~0);
+        libssh2_trace(connected_session,
+            ~(getenv("FIXTURE_TRACE_NO_DEBUGDUMP") ? LIBSSH2_TRACE_TRANS : 0));
         fprintf(stdout, "Trace all enabled for connect_to_server.\n");
     }
     else if(getenv("FIXTURE_TRACE_ALL")) {
-        libssh2_trace(connected_session, ~0);
+        libssh2_trace(connected_session,
+            ~(getenv("FIXTURE_TRACE_NO_DEBUGDUMP") ? LIBSSH2_TRACE_TRANS : 0));
         fprintf(stdout, "Trace all enabled.\n");
     }
 
     /* Override crypt algorithm for the test */
-    if(crypt) {
-        if(libssh2_session_method_pref(connected_session,
-                                       LIBSSH2_METHOD_CRYPT_CS, crypt) ||
-           libssh2_session_method_pref(connected_session,
-                                       LIBSSH2_METHOD_CRYPT_SC, crypt)) {
-            fprintf(stderr, "libssh2_session_method_pref CRYPT failed "
-                            "(probably disabled in the build): '%s'\n", crypt);
-            return NULL;
-        }
+    if(crypt &&
+       (libssh2_session_method_pref(connected_session,
+                                    LIBSSH2_METHOD_CRYPT_CS, crypt) ||
+        libssh2_session_method_pref(connected_session,
+                                    LIBSSH2_METHOD_CRYPT_SC, crypt))) {
+        fprintf(stderr, "libssh2_session_method_pref CRYPT failed "
+                        "(probably disabled in the build): '%s'\n", crypt);
+        return NULL;
     }
 
     /* Override mac algorithm for the test */
-    if(mac) {
-        if(libssh2_session_method_pref(connected_session,
-                                       LIBSSH2_METHOD_MAC_CS, mac) ||
-           libssh2_session_method_pref(connected_session,
-                                       LIBSSH2_METHOD_MAC_SC, mac)) {
-            fprintf(stderr, "libssh2_session_method_pref MAC failed "
-                            "(probably disabled in the build): '%s'\n", mac);
-            return NULL;
-        }
+    if(mac &&
+       (libssh2_session_method_pref(connected_session,
+                                    LIBSSH2_METHOD_MAC_CS, mac) ||
+        libssh2_session_method_pref(connected_session,
+                                    LIBSSH2_METHOD_MAC_SC, mac))) {
+        fprintf(stderr, "libssh2_session_method_pref MAC failed "
+                        "(probably disabled in the build): '%s'\n", mac);
+        return NULL;
+    }
+
+    /* Without an explicit override, limit accepted hostkey types to those
+       tested (or potentially tested) in test_hostkey.c and
+       test_hostkey_hash.c. */
+    if(!hostkey)
+        hostkey =
+            "ssh-ed25519,"
+            "ecdsa-sha2-nistp521,"
+            "ecdsa-sha2-nistp384,"
+            "ecdsa-sha2-nistp256,"
+            "rsa-sha2-256,"
+            "rsa-sha2-512,"
+            "ssh-rsa";
+
+    if(libssh2_session_method_pref(connected_session,
+                                   LIBSSH2_METHOD_HOSTKEY, hostkey)) {
+        fprintf(stderr, "libssh2_session_method_pref() HOSTKEY failed "
+                        "(probably disabled in the build): '%s'\n", hostkey);
+        return NULL;
     }
 
     libssh2_session_set_blocking(connected_session, 1);
@@ -253,8 +297,8 @@ const char *srcdir_path(const char *file)
         abort();
     }
 
-    len = ssh2_snprintf(filepath[curpath], sizeof(filepath[0]), "%s/%s",
-                        srcdir, file);
+    len = snprintf(filepath[curpath], sizeof(filepath[0]), "%s/%s",
+                   srcdir, file);
     if(len < 0 || (size_t)len >= sizeof(filepath[0])) {
         fprintf(stderr, "srcdir_path: path too long. srcdir='%s', fn='%s'\n",
                 srcdir, file);

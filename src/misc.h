@@ -3,62 +3,96 @@
 /* Copyright (C) Daniel Stenberg
  * All rights reserved.
  *
- * Redistribution and use in source and binary forms,
- * with or without modification, are permitted provided
- * that the following conditions are met:
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- *   Redistributions of source code must retain the above
- *   copyright notice, this list of conditions and the
- *   following disclaimer.
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
  *
- *   Redistributions in binary form must reproduce the above
- *   copyright notice, this list of conditions and the following
- *   disclaimer in the documentation and/or other materials
- *   provided with the distribution.
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
  *
- *   Neither the name of the copyright holder nor the names
- *   of any other contributors may be used to endorse or
- *   promote products derived from this software without
- *   specific prior written permission.
+ * 3. Neither the name of the copyright holder nor the names of its
+ *    contributors may be used to endorse or promote products derived from this
+ *    software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
- * USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
- * OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
 #include <errno.h>
+#include <stdarg.h>
 
-#ifdef LIBSSH2_NO_CLEAR_MEMORY
-#define ssh2_explicit_zero(buf, size) \
-    do {                              \
-        (void)(buf);                  \
-        (void)(size);                 \
-    } while(0)
-#elif defined(_WIN32)
-#define ssh2_explicit_zero(buf, size) SecureZeroMemory(buf, size)
-#elif defined(HAVE_EXPLICIT_BZERO)
-#define ssh2_explicit_zero(buf, size) explicit_bzero(buf, size)
-#elif defined(HAVE_EXPLICIT_MEMSET)
-#define ssh2_explicit_zero(buf, size) (void)explicit_memset(buf, 0, size)
-#elif defined(HAVE_MEMSET_S)
-#define ssh2_explicit_zero(buf, size) (void)memset_s(buf, size, 0, size)
+#ifdef _WIN32
+FILE *ssh2_fopen(const char *filename, const char *mode);
 #else
+#define ssh2_fopen fopen
+#endif
+
+/* Use local implementation with <VS2015 */
+#if defined(_MSC_VER) && _MSC_VER < 1900
+int ssh2_vsnprintf(char *buf, size_t buf_len, const char *fmt, va_list args)
+    SSH2_PRINTF(3, 0);
+int ssh2_snprintf(char *buf, size_t buf_len, const char *fmt, ...)
+    SSH2_PRINTF(3, 4);
+#else
+#define ssh2_vsnprintf  vsnprintf
+#define ssh2_snprintf   snprintf
+#endif
+
+#if defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__) || \
+    defined(__NetBSD__)
+#include <sys/param.h>  /* for __FreeBSD_version, __DragonFly_version, OpenBSD,
+                           __NetBSD_Version__ */
+#endif
+
+#ifndef _LIBSSH2_LOCAL_MEMZERO /* to be removed after a couple of releases */
+#ifdef _WIN32
+#if defined(_MSC_VER) && defined(NTDDI_VERSION) && \
+    (NTDDI_VERSION >= 0x0A000010) /* MS SDK 10.0.26100.0+ */
+#pragma comment(lib, "volatileaccessu.lib")
+#define ssh2_explicit_zero(buf, size)  SecureZeroMemory2(buf, size)
+#else
+#define ssh2_explicit_zero(buf, size)  SecureZeroMemory(buf, size)
+#endif
+#elif defined(HAVE_MEMSET_S)
+#define ssh2_explicit_zero(buf, size)  (void)memset_s(buf, size, 0, size)
+#elif defined(HAVE_MEMSET_EXPLICIT)
+#define ssh2_explicit_zero(buf, size)  (void)memset_explicit(buf, 0, size)
+#elif defined(__CYGWIN__) || \
+    (defined(__NEWLIB__) && !defined(__CLIB2__)) || \
+    (defined(__GLIBC__) && \
+        (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 25))) || \
+    (defined(__DragonFly__) && __DragonFly_version >= 500600 /* 5.6+ */) || \
+    (defined(__FreeBSD__) && __FreeBSD_version >= 1100037 /* 11.0+ */) || \
+    (defined(__OpenBSD__) && OpenBSD >= 201405 /* 5.5+ */)
+#define ssh2_explicit_zero(buf, size)  explicit_bzero(buf, size)
+#elif defined(__NetBSD__) && __NetBSD_Version__ >= 702000000 /* 7.2+ */
+#define ssh2_explicit_zero(buf, size)  (void)explicit_memset(buf, 0, size)
+#endif
+#endif /* !_LIBSSH2_LOCAL_MEMZERO */
+
+#ifndef ssh2_explicit_zero
 #define LIBSSH2_MEMZERO
-void ssh2_memzero(void *buf, size_t size);
-#define ssh2_explicit_zero(buf, size) ssh2_memzero(buf, size)
+void ssh2_explicit_zero(void *buf, size_t size);
+#endif
+
+void ssh2_zero_free(LIBSSH2_SESSION *session, void *buf, size_t len);
+
+#if !defined(_WIN32) || defined(__MINGW32__)
+#include <sys/time.h>  /* for timeval, gettimeofday() */
 #endif
 
 struct list_head {
@@ -112,14 +146,15 @@ int ssh2_base64_decode(LIBSSH2_SESSION *session, char **data, size_t *datalen,
 size_t ssh2_base64_encode(LIBSSH2_SESSION *session,
                           const char *inp, size_t insize, char **outptr);
 
+void ssh2_swap_bytes(unsigned char *buf, size_t len);
 uint32_t ssh2_ntohu32(const unsigned char *buf);
 libssh2_uint64_t ssh2_ntohu64(const unsigned char *buf);
 void ssh2_htonu32(unsigned char *buf, uint32_t value);
 void ssh2_store_u32(unsigned char **buf, uint32_t value);
 void ssh2_store_u64(unsigned char **buf, libssh2_uint64_t value);
-int ssh2_store_str(unsigned char **buf, const char *str, size_t len);
-int ssh2_store_hybrid_str(unsigned char **buf, const char *str_1,
-                          size_t len_1, const char *str_2, size_t len_2);
+int ssh2_store_str(unsigned char **buf, const void *str, size_t len);
+int ssh2_store_hybrid_str(unsigned char **buf, const void *str_1,
+                          size_t len_1, const void *str_2, size_t len_2);
 int ssh2_store_bignum_bytes(unsigned char **buf,
                             const unsigned char *bytes, size_t len);
 void *ssh2_calloc(LIBSSH2_SESSION *session, size_t size);
@@ -131,6 +166,7 @@ int ssh2_get_byte(struct string_buf *buf, unsigned char *out);
 int ssh2_get_u32(struct string_buf *buf, uint32_t *out);
 int ssh2_get_u64(struct string_buf *buf, libssh2_uint64_t *out);
 int ssh2_match_string(struct string_buf *buf, const char *match);
+int ssh2_get_chars(struct string_buf *buf, char **outbuf, size_t *outlen);
 int ssh2_get_string(struct string_buf *buf, unsigned char **outbuf,
                     size_t *outlen);
 int ssh2_copy_string(LIBSSH2_SESSION *session, struct string_buf *buf,
@@ -140,11 +176,9 @@ int ssh2_get_bignum_bytes(struct string_buf *buf, unsigned char **outbuf,
 int ssh2_check_length(struct string_buf *buf, size_t requested_len);
 int ssh2_eob(struct string_buf *buf);
 
-void ssh2_xor_data(unsigned char *output,
-                   const unsigned char *input1,
-                   const unsigned char *input2,
-                   size_t length);
-
 int ssh2_timingsafe_bcmp(const void *b1, const void *b2, size_t n);
+int ssh2_str_number(const char **linep,
+                    libssh2_int64_t *nump, libssh2_int64_t max,
+                    int base);
 
 #endif /* LIBSSH2_MISC_H */

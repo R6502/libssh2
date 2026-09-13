@@ -8,7 +8,7 @@
 #include "libssh2_setup.h"
 #include "libssh2.h"
 
-#ifdef HAVE_SYS_SOCKET_H
+#ifndef _WIN32
 #include <sys/socket.h>
 #endif
 #ifdef HAVE_UNISTD_H
@@ -26,8 +26,8 @@
 
 static const char *hostname = "127.0.0.1";
 static const int port_number = 4711;
-static const char *pubkey = "key_rsa.pub";
-static const char *privkey = "key_rsa";
+static const char *pubkey = "keys/id_rsa_pem.pub";
+static const char *privkey = "keys/id_rsa_pem";
 static const char *username = "username";
 static const char *password = "password";
 
@@ -137,7 +137,8 @@ int main(int argc, char *argv[])
 
     if(getenv("FIXTURE_TRACE_ALL_CONNECT") ||
        getenv("FIXTURE_TRACE_ALL")) {
-        libssh2_trace(session, ~0);
+        libssh2_trace(session,
+            ~(getenv("FIXTURE_TRACE_NO_DEBUGDUMP") ? LIBSSH2_TRACE_TRANS : 0));
         fprintf(stdout, "Trace all enabled.\n");
     }
 
@@ -172,10 +173,15 @@ int main(int argc, char *argv[])
      * may have it hard coded, may go to a file, may present it to the
      * user, that is your call
      */
-    fingerprint = libssh2_hostkey_hash(session, LIBSSH2_HOSTKEY_HASH_SHA1);
+    fingerprint = libssh2_hostkey_hash(session, LIBSSH2_HOSTKEY_HASH_SHA256);
     fprintf(stderr, "Fingerprint: ");
-    for(i = 0; i < 20; i++)
-        fprintf(stderr, "%02X ", (unsigned char)fingerprint[i]);
+    if(!fingerprint) {
+        fprintf(stderr, "(null)");
+        goto shutdown;
+    }
+    else
+        for(i = 0; i < 32; i++)
+            fprintf(stderr, "%02X ", (unsigned char)fingerprint[i]);
     fprintf(stderr, "\n");
 
     /* check what authentication methods are available */
@@ -248,11 +254,7 @@ shutdown:
 
     if(sock != LIBSSH2_INVALID_SOCKET) {
         shutdown(sock, 2 /* SHUT_RDWR */);
-#ifdef _WIN32
-        closesocket(sock);
-#else
-        close(sock);
-#endif
+        LIBSSH2_SOCKET_CLOSE(sock);
     }
 
     fprintf(stderr, "all done\n");

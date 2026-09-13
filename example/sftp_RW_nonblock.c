@@ -14,27 +14,23 @@
 #include <libssh2.h>
 #include <libssh2_sftp.h>
 
+#include <stdio.h>
+
 #ifdef _WIN32
 #define write(f, b, c)  _write(f, b, (unsigned int)(c))
-#endif
-
-#ifdef HAVE_SYS_SOCKET_H
+#else
 #include <sys/socket.h>
+#include <unistd.h>
 #endif
 #ifdef HAVE_SYS_SELECT_H
 #include <sys/select.h>
 #endif
-#ifdef HAVE_UNISTD_H
-#include <unistd.h>
-#endif
 #ifdef HAVE_NETINET_IN_H
 #include <netinet/in.h>
 #endif
-#ifdef HAVE_SYS_TIME_H
+#if !defined(_WIN32) || defined(__MINGW32__)
 #include <sys/time.h>  /* for timeval */
 #endif
-
-#include <stdio.h>
 
 static const char *pubkey = "/home/username/.ssh/id_rsa.pub";
 static const char *privkey = "/home/username/.ssh/id_rsa";
@@ -135,7 +131,7 @@ int main(int argc, char *argv[])
     sin.sin_family = AF_INET;
     sin.sin_port = htons(22);
     sin.sin_addr.s_addr = htonl(0x7F000001);
-    if(connect(sock, (struct sockaddr *)(&sin), sizeof(struct sockaddr_in))) {
+    if(connect(sock, (struct sockaddr *)&sin, sizeof(struct sockaddr_in))) {
         fprintf(stderr, "failed to connect.\n");
         goto shutdown;
     }
@@ -163,10 +159,15 @@ int main(int argc, char *argv[])
      * may have it hard coded, may go to a file, may present it to the
      * user, that is your call
      */
-    fingerprint = libssh2_hostkey_hash(session, LIBSSH2_HOSTKEY_HASH_SHA1);
+    fingerprint = libssh2_hostkey_hash(session, LIBSSH2_HOSTKEY_HASH_SHA256);
     fprintf(stderr, "Fingerprint: ");
-    for(i = 0; i < 20; i++)
-        fprintf(stderr, "%02X ", (unsigned char)fingerprint[i]);
+    if(!fingerprint) {
+        fprintf(stderr, "(null)");
+        goto shutdown;
+    }
+    else
+        for(i = 0; i < 32; i++)
+            fprintf(stderr, "%02X ", (unsigned char)fingerprint[i]);
     fprintf(stderr, "\n");
 
     tempstorage = fopen(storage, "wb");
@@ -200,7 +201,6 @@ int main(int argc, char *argv[])
 
     do {
         sftp_session = libssh2_sftp_init(session);
-
         if(!sftp_session) {
             if(libssh2_session_last_errno(session) == LIBSSH2_ERROR_EAGAIN) {
                 fprintf(stderr, "non-blocking init\n");
@@ -240,7 +240,10 @@ int main(int argc, char *argv[])
 
             if(nread > 0) {
                 /* write to stderr */
-                write(2, mem, (size_t)nread);
+                ssize_t nwritten = write(2, mem, (size_t)nread);
+                if(nwritten != nread)
+                    fprintf(stderr, "write failed: %ld != %ld\n",
+                            (long)nread, (long)nwritten);
                 /* write to temporary storage area */
                 fwrite(mem, (size_t)nread, 1, tempstorage);
             }

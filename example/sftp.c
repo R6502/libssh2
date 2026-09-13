@@ -14,14 +14,14 @@
 #include <libssh2.h>
 #include <libssh2_sftp.h>
 
-#ifdef _WIN32
-#define write(f, b, c)  _write(f, b, (unsigned int)(c))
-#endif
+#include <stdio.h>
+#include <string.h>
 
-#ifdef HAVE_SYS_SOCKET_H
+#ifdef _WIN32
+#define strdup          _strdup
+#define write(f, b, c)  _write(f, b, (unsigned int)(c))
+#else
 #include <sys/socket.h>
-#endif
-#ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
 #ifdef HAVE_NETINET_IN_H
@@ -30,9 +30,6 @@
 #ifdef HAVE_ARPA_INET_H
 #include <arpa/inet.h>
 #endif
-
-#include <stdio.h>
-#include <string.h>
 
 static const char *pubkey = "/home/username/.ssh/id_rsa.pub";
 static const char *privkey = "/home/username/.ssh/id_rsa";
@@ -70,11 +67,12 @@ static void kbd_callback(const char *name, int name_len,
         fprintf(stderr, "'\n");
 
         fprintf(stderr, "Please type response: ");
-        fgets(buf, sizeof(buf), stdin);
+        if(!fgets(buf, sizeof(buf), stdin))
+            fprintf(stderr, "fgets() failed.\n");
         n = strlen(buf);
         while(n > 0 && strchr("\r\n", buf[n - 1]))
             n--;
-        buf[n] = 0;
+        buf[n] = '\0';
 
         responses[i].text = strdup(buf);
         responses[i].length = (unsigned int)n;
@@ -141,7 +139,7 @@ int main(int argc, char *argv[])
     sin.sin_family = AF_INET;
     sin.sin_port = htons(22);
     sin.sin_addr.s_addr = hostaddr;
-    if(connect(sock, (struct sockaddr *)(&sin), sizeof(struct sockaddr_in))) {
+    if(connect(sock, (struct sockaddr *)&sin, sizeof(struct sockaddr_in))) {
         fprintf(stderr, "failed to connect.\n");
         goto shutdown;
     }
@@ -153,7 +151,7 @@ int main(int argc, char *argv[])
         goto shutdown;
     }
 
-    /* Since we have set non-blocking, tell libssh2 we are blocking */
+    /* Since we have not set non-blocking, tell libssh2 we are blocking */
     libssh2_session_set_blocking(session, 1);
 
     /* ... start it up. This trades welcome banners, exchange keys,
@@ -170,10 +168,15 @@ int main(int argc, char *argv[])
      * may have it hard coded, may go to a file, may present it to the
      * user, that is your call
      */
-    fingerprint = libssh2_hostkey_hash(session, LIBSSH2_HOSTKEY_HASH_SHA1);
+    fingerprint = libssh2_hostkey_hash(session, LIBSSH2_HOSTKEY_HASH_SHA256);
     fprintf(stderr, "Fingerprint: ");
-    for(i = 0; i < 20; i++)
-        fprintf(stderr, "%02X ", (unsigned char)fingerprint[i]);
+    if(!fingerprint) {
+        fprintf(stderr, "(null)");
+        goto shutdown;
+    }
+    else
+        for(i = 0; i < 32; i++)
+            fprintf(stderr, "%02X ", (unsigned char)fingerprint[i]);
     fprintf(stderr, "\n");
 
     /* check what authentication methods are available */
@@ -236,7 +239,6 @@ int main(int argc, char *argv[])
 
     fprintf(stderr, "libssh2_sftp_init().\n");
     sftp_session = libssh2_sftp_init(session);
-
     if(!sftp_session) {
         fprintf(stderr, "Unable to init SFTP session\n");
         goto shutdown;
@@ -260,8 +262,12 @@ int main(int argc, char *argv[])
         /* loop until we fail */
         fprintf(stderr, "libssh2_sftp_read().\n");
         nread = libssh2_sftp_read(sftp_handle, mem, sizeof(mem));
-        if(nread > 0)
-            write(1, mem, (size_t)nread);
+        if(nread > 0) {
+            ssize_t nwritten = write(1, mem, (size_t)nread);
+            if(nwritten != nread)
+                fprintf(stderr, "write failed: %ld != %ld\n",
+                        (long)nread, (long)nwritten);
+        }
         else
             break;
     } while(1);
