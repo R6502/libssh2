@@ -645,12 +645,28 @@ static int knownhost_check(LIBSSH2_KNOWNHOSTS *hosts,
         node = ssh2_list_first(&hosts->head);
         while(node) {
             switch(node->typemask & LIBSSH2_KNOWNHOST_TYPE_MASK) {
+
+            /* 16.03.2025: Bug hier: Mit "ecdsa-sha2-nistp256" haben wir type==LIBSSH2_KNOWNHOST_TYPE_CUSTOM
+                           aber typemask == LIBSSH2_KNOWNHOST_TYPE_PLAIN
+
+               01.09.2025: Nach Update von libssh2 nochmal prüfen
+
+               29.12.2025: Wieder korrigiert, Beispiel "ecdsa-sha2-nistp256" */
+
             case LIBSSH2_KNOWNHOST_TYPE_PLAIN:
+#if defined (OPT_SSH2_IBME_EXTRA)
+                /* empty - fall through */
+#else
                 if(type == LIBSSH2_KNOWNHOST_TYPE_PLAIN)
                     match = knownhost_plain_match(host, node->name);
                 break;
+#endif
             case LIBSSH2_KNOWNHOST_TYPE_CUSTOM:
+#if defined (OPT_SSH2_IBME_EXTRA)
+                if((type == LIBSSH2_KNOWNHOST_TYPE_CUSTOM) || (type == LIBSSH2_KNOWNHOST_TYPE_PLAIN))
+#else
                 if(type == LIBSSH2_KNOWNHOST_TYPE_CUSTOM)
+#endif
                     match = !strcmp(host, node->name);
                 break;
             case LIBSSH2_KNOWNHOST_TYPE_SHA1:
@@ -1364,8 +1380,7 @@ static int knownhost_writeline(LIBSSH2_KNOWNHOSTS *hosts,
         }
     }
 
-    /* we report the full length of the data with the null-terminator
-       excluded */
+    /* we report the full length of the data with the trailing zero excluded */
     *outlen = required_size - 1;
 
     if(required_size <= buflen)

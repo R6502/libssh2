@@ -92,4 +92,16 @@
 
 #endif /* _WIN32 */
 
+#if defined (OPT_SSH2_IBME_EXTRA)
+
+extern unsigned int enable_wincng_ecdsa;
+
+void dbg_printf (const char *fmt, ...);
+
+unsigned long long int pf_performance_counter_read ();
+unsigned long long int pf_performance_counter_to_usec (unsigned long long int raw);
+
+#endif /* OPT_SSH2_IBME_EXTRA */
+
+
 #endif /* LIBSSH2_SETUP_H */

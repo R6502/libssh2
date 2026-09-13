@@ -227,6 +227,18 @@ struct wcng_cipher_ctx {
     ULONG dwIV;
     ULONG dwBlockLength;
     ULONG dwCtrLength;
+
+#if defined (OPT_SSH2_IBME_EXTRA)
+    ULONG dwCtrLength_words;
+
+    unsigned char *pbCtr_lsb;
+
+    unsigned int   precalculated_key_count,
+                   precalculated_key_next;
+
+    unsigned int   *precalculated_key_ctr;
+    unsigned int   *precalculated_key_aes;
+#endif
 };
 
 #define ssh2_cipher_ctx struct wcng_cipher_ctx

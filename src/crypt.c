@@ -117,6 +117,7 @@ static int crypt_encrypt(LIBSSH2_SESSION *session,
     struct crypt_ctx *cctx = *(struct crypt_ctx **)abstract;
     (void)session;
     (void)seqno;
+
     return ssh2_cipher_crypt(&cctx->h, cctx->algo, cctx->encrypt, buf,
                              buf_len, firstlast);
 }
@@ -502,7 +503,13 @@ static const struct crypt_method crypt_method_chacha20_poly1305_openssh = {
 /* These are the crypt methods that are available to be negotiated. Methods
    towards the start are chosen in preference to ones further down the list. */
 static const struct crypt_method *crypt_methods[] = {
+
+#if defined (OPT_SSH2_IBME_EXTRA)
+    /* 17.03.2025: do not use crypt_method_chacha20_poly1305_openssh with Windows - seems to be damn slow*/
+#else
     &crypt_method_chacha20_poly1305_openssh,
+#endif
+
 #if LIBSSH2_AES_GCM
     &crypt_method_aes256_gcm,
     &crypt_method_aes128_gcm,

@@ -2866,6 +2866,11 @@ static const struct kex_method kex_method_strict_client_extension = {
     0,
 };
 
+/* IBME */
+
+#if defined (OPT_SSH2_IBME_EXTRA)
+static const struct kex_method *kex_methods[50];
+#else
 static const struct kex_method *kex_methods[] = {
 #if LIBSSH2_MLKEM
 #if LIBSSH2_ED25519
@@ -2898,6 +2903,7 @@ static const struct kex_method *kex_methods[] = {
     &kex_method_strict_client_extension,
     NULL
 };
+#endif
 
 struct common_method {
     const char *name;
@@ -2974,6 +2980,48 @@ static int kex_init(LIBSSH2_SESSION *session)
     size_t data_len = 62;
     unsigned char *data, *s;
     int rc;
+
+#if defined (OPT_SSH2_IBME_EXTRA)
+    //dbg_printf ("KEXINIT...\n");
+
+    /* IBME */
+    { unsigned int n = 0;
+
+#if LIBSSH2_ED25519
+      kex_methods [n++] = &kex_method_ssh_curve25519_sha256;
+      kex_methods [n++] = &kex_method_ssh_curve25519_sha256_libssh;
+#endif
+
+#if LIBSSH2_ECDSA
+      if (enable_wincng_ecdsa) {
+        kex_methods [n++] = &kex_method_ecdh_sha2_nistp256;
+        kex_methods [n++] = &kex_method_ecdh_sha2_nistp384;
+        kex_methods [n++] = &kex_method_ecdh_sha2_nistp521;
+      }
+#endif
+      kex_methods [n++] = &kex_method_diffie_hellman_group_exchange_sha256;
+      kex_methods [n++] = &kex_method_diffie_hellman_group16_sha512;
+
+      /* Windows can do only max 4096 Bit DH
+        &kex_method_diffie_hellman_group18_sha512,
+      */
+
+      kex_methods [n++] = &kex_method_diffie_hellman_group14_sha256;
+
+#ifdef LIBSSH2_KEX_SHA1_ENABLE
+      kex_methods [n++] = &kex_method_diffie_hellman_group14_sha1;
+      kex_methods [n++] = &kex_method_diffie_hellman_group1_sha1;
+      kex_methods [n++] = &kex_method_diffie_hellman_group_exchange_sha1;
+#endif
+
+      kex_methods [n++] = &kex_method_extension_negotiation;
+      kex_methods [n++] = &kex_method_strict_client_extension;
+
+      kex_methods [n++] = NULL;
+
+      //dbg_printf ("KEXINIT -> %u", n);
+    }
+#endif
 
     if(session->kexinit_state == ssh2_NB_state_idle) {
         uint32_t kex_len, hostkey_len;

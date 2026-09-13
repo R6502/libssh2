@@ -869,6 +869,24 @@ int ssh2_transport_read(LIBSSH2_SESSION *session)
             p->wptr += numbytes;
             /* increase data_num */
             p->data_num += numbytes;
+
+
+#if defined (OPT_SSH2_IBME_EXTRA)
+            /* UNALIGNED - might happen here, fix it as we want only 32bit-aligned packets in WINCNG decrypt()  */
+            { size_t offset = p->readidx & 0x3;
+
+              if (offset) {
+                size_t nmove = p->writeidx - p->readidx;
+
+                //dbg_printf ("NUMBYTES: readidx=%d writeidx=%d offset=%zu numbytes=%zu nmove=%zu", p->readidx, p->writeidx, offset, numbytes, nmove);
+
+                if (nmove) memmove (&p->buf [p->readidx - offset], &p->buf [p->readidx], nmove);
+
+                p->readidx  -= offset;
+                p->writeidx -= offset;
+              }
+            }
+#endif
         }
 
         /* now check how much data there is left to read to finish the

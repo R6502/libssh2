@@ -32,7 +32,11 @@
 
 #include "libssh2_priv.h"
 
+#if defined (OPT_SSH2_IBME_EXTRA)
+  /* no agent.h */
+#else
 #include "agent.h"
+#endif
 
 const char *libssh2_version(int req_version_num)
 {

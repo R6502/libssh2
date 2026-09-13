@@ -100,6 +100,10 @@
 #define PKCS_RSA_PRIVATE_KEY ((LPCSTR)(size_t)43)
 #endif
 
+#if defined (OPT_SSH2_IBME_EXTRA)
+static void wcng_aes_ctr_increment(unsigned char *ctr, size_t length);
+#endif
+
 static void wcng_zero_free(void *buf, size_t len)
 {
     if(!buf)
@@ -124,6 +128,57 @@ static void wcng_memcpy_with_be_padding(unsigned char *dest,
 
     memcpy((dest + dest_len) - src_len, src, src_len);
 }
+
+
+/*******************************************************************/
+
+#if defined (OPT_SSH2_IBME_EXTRA)
+
+void wcng_precalculate (ssh2_cipher_ctx *ctx)
+{
+  int ret = 0;
+  unsigned int n = 0;
+  unsigned char *wp = (unsigned char *) ctx->precalculated_key_ctr;
+  ULONG cbOutput = 0;
+
+  //dbg_printf ("wcng_precalculate/111 cnt=%u wp=%p ctrlen=%u p:ctr=%p", ctx->precalculated_key_count, wp, ctx->dwCtrLength, ctx->pbCtr);
+
+  for (unsigned int n = 0; n < ctx->precalculated_key_count; ++n) {
+    memcpy (wp, ctx->pbCtr, ctx->dwCtrLength);
+
+    wp += ctx->dwCtrLength;
+
+    if (*ctx->pbCtr_lsb == 0xff) {
+      wcng_aes_ctr_increment (ctx->pbCtr, ctx->dwCtrLength);
+    }
+    else {
+      *ctx->pbCtr_lsb += 1;
+    }
+  }
+
+  //dbg_printf ("wcng_precalculate/222");
+
+  ret = BCryptEncrypt (ctx->hKey,
+                       (unsigned char*) ctx->precalculated_key_ctr,
+                       ctx->precalculated_key_count * ctx->dwCtrLength,
+                       NULL,
+                       ctx->pbIV,
+                       ctx->dwIV,
+                       (unsigned char*) ctx->precalculated_key_aes,
+                       ctx->precalculated_key_count * ctx->dwCtrLength,
+                       &cbOutput,
+                       0);
+
+  //dbg_printf ("BCryptEncrypt -> %d, inp=%u cbOutput=%u", ret, ctx->precalculated_key_count * ctx->dwCtrLength, cbOutput);
+
+  if (BCRYPT_SUCCESS (ret)) {
+    //dbg_printf ("BCryptEncrypt -> OK");
+    ctx->precalculated_key_next = 0;
+  }
+} /* wcng_precalculate */
+
+#endif // defined (OPT_SSH2_IBME_EXTRA)
+
 
 /*******************************************************************/
 /*
@@ -590,6 +645,9 @@ void ssh2_crypto_init(void)
         ssh2_wcng.hAlgDH = NULL;
 
 #if LIBSSH2_ECDSA
+#  if defined (OPT_SSH2_IBME_EXTRA)
+    if (enable_wincng_ecdsa)
+#  endif
     for(curve = 0; curve < SSH2_ARRAYSIZE(wcng_ecdsa_algs); curve++) {
         BCRYPT_ALG_HANDLE alg_handle_ecdsa;
         BCRYPT_ALG_HANDLE alg_handle_ecdh;
@@ -667,6 +725,9 @@ void ssh2_crypto_exit(void)
         (void)BCryptCloseAlgorithmProvider(ssh2_wcng.hAlgDH, 0);
 
 #if LIBSSH2_ECDSA
+#  if defined (OPT_SSH2_IBME_EXTRA)
+    if (enable_wincng_ecdsa)
+#  endif
     for(curve = 0; curve < SSH2_ARRAYSIZE(wcng_ecdsa_algs); curve++) {
         if(ssh2_wcng.hAlgECDSA[curve])
             (void)BCryptCloseAlgorithmProvider(ssh2_wcng.hAlgECDSA[curve], 0);
@@ -2831,6 +2892,31 @@ int ssh2_cipher_init(ssh2_cipher_ctx *ctx, SSH2_CIPHER_T(algo),
     ctx->dwBlockLength = dwBlockLength;
     ctx->dwCtrLength = dwCtrLength;
 
+#if defined (OPT_SSH2_IBME_EXTRA)
+  ctx->pbCtr_lsb = ctx->pbCtr + dwCtrLength - 1;
+  ctx->dwCtrLength_words = ctx->dwCtrLength / sizeof (unsigned int);
+
+  ctx->precalculated_key_count = 0;
+  ctx->precalculated_key_next = 0;
+  ctx->precalculated_key_ctr = NULL;
+  ctx->precalculated_key_aes = NULL;
+
+  if (algo.ctrMode) {
+    ctx->precalculated_key_count = 1024;
+    ctx->precalculated_key_next  = ctx->precalculated_key_count;
+    ctx->precalculated_key_ctr   = malloc (ctx->dwCtrLength * ctx->precalculated_key_count);
+    ctx->precalculated_key_aes   = malloc (ctx->dwCtrLength * ctx->precalculated_key_count);
+  }
+
+  // dbg_printf (" ***** ssh2_cipher_init: precalculated_key_count=%u/%u (%p %p) ctrlen=%u  (%p) DONE",
+  //             ctx->precalculated_key_count,
+  //             ctx->precalculated_key_next,
+  //             ctx->precalculated_key_ctr,
+  //             ctx->precalculated_key_aes,
+  //             ctx->dwCtrLength,
+  //             ctx);
+#endif
+
     return 0;
 }
 
@@ -2863,6 +2949,126 @@ static void wcng_xor_data(unsigned char *dst,
     for(i = 0; i < length; i++)
         *dst++ = *input1++ ^ *input2++;
 }
+
+#if defined (OPT_SSH2_IBME_EXTRA)
+int ssh2_cipher_crypt (ssh2_cipher_ctx *ctx,
+                       SSH2_CIPHER_T(algo),
+                       int encrypt,
+                       unsigned char *block,
+                       size_t blocklen,
+                       int firstlast)
+{
+  unsigned int *pbOutput = NULL; //, *pbInput;
+  ULONG cbOutput = 0, cbInput = 0;
+  NTSTATUS ret = 0; //STATUS_SUCCESS;
+  unsigned int output_buffer [32];
+
+  (void) firstlast;
+  int show = 0;
+
+  //unsigned long long t_start = 0,
+  //                   t_end   = 0,
+  //                   t_dt   = 0;
+
+  // dbg_printf ("    wincng_cipher_crypt, encr=%d blen=%d fl=%d", encrypt, (int)blocklen, firstlast);
+
+  cbOutput = cbInput = (ULONG)blocklen;
+
+   //if (blocklen & 0x03) { // nur 4-byte Alignment garantiert
+   if (blocklen != 16) { // nur 4-byte Alignment garantiert
+     dbg_printf ("!!!!!! qTerm/BLOCKLEN: %p %llu", block, (unsigned long long int)blocklen);
+     show = 1;
+   }
+
+   if ((unsigned long long) block & 0x03) { // nur 4-byte Alignment garantiert
+     dbg_printf ("!!!!!! qTerm/UNALIGNED: %p %llu", block, (unsigned long long int)blocklen);
+     show = 1;
+   }
+
+  // if (type.ctrMode) {
+  //   pbInput = ctx->pbCtr;
+  // }
+  // else {
+  //   pbInput = block;
+  // }
+
+  //pbOutput = malloc(cbOutput);
+  pbOutput = output_buffer;
+
+  //dbg_printf ("      -> cbOutput=%u", cbOutput);
+
+  if (pbOutput) {
+    if (encrypt || algo.ctrMode) {
+
+      if (ctx->precalculated_key_next >= ctx->precalculated_key_count) {
+        //dbg_printf ("************ PPPP RRR EEE CCCC AAAA LLLlLLLL CCCC UUUU LLLLLL AAAA TTT EEE ************, %p", ctx);
+        wcng_precalculate (ctx);
+        //dbg_printf ("->DONE, %p", ctx);
+      }
+
+      pbOutput = ctx->precalculated_key_aes + ctx->precalculated_key_next * ctx->dwCtrLength_words;
+
+      ctx->precalculated_key_next += 1;
+    }
+    else {
+      ret = BCryptDecrypt (ctx->hKey,
+                           block,
+                           cbInput,
+                           NULL,
+                           ctx->pbIV,
+                           ctx->dwIV,
+                           (unsigned char *)pbOutput,
+                           cbOutput,
+                           &cbOutput,
+                           0);
+    }
+
+    if (BCRYPT_SUCCESS (ret)) {
+      if (algo.ctrMode) {
+        unsigned int *wp_block = (unsigned int *) block;
+
+        //dbg_printf ("        - increment, len=%u", ctx->dwCtrLength);
+        //dbg_printf ("        - increment, len=%u %p / %p", ctx->dwCtrLength, ctx->pbCtr, ctx->pbCtr_lsb);
+
+        // ssh2_xor_data (block, block, (unsigned char *)pbOutput, blocklen);
+        if (show) dbg_printf ("ctx->dwCtrLength_words=%u (%p %p)", ctx->dwCtrLength_words, wp_block, pbOutput);
+
+        // UNALIGNED, hier .... von transport.c / crypt()
+
+        // XOR word-based
+        if (ctx->dwCtrLength_words == 4) {
+          *wp_block++ ^= *pbOutput++;
+          *wp_block++ ^= *pbOutput++;
+          *wp_block++ ^= *pbOutput++;
+          *wp_block++ ^= *pbOutput++;
+        }
+        else {
+          unsigned int n = 0;
+          for (n = 0; n < ctx->dwCtrLength_words; ++n) {
+            *wp_block++ ^= *pbOutput++;
+          }
+        }
+
+      }
+      else {
+        memcpy (block, pbOutput, cbOutput);
+      }
+    }
+
+    // wcng_safe_free(pbOutput, cbOutput);
+  }
+
+  // t_dt = t_end - t_start;
+  //
+  // if (t_dt > 10) {
+  //   //dbg_printf ("    wincng_cipher_crypt, dt=%llu / %llu", t_dt, pf_performance_counter_to_usec (t_dt));
+  // }
+
+  return BCRYPT_SUCCESS(ret) ? 0 : -1;
+} /* ssh2_cipher_crypt */
+
+
+#else // defined (OPT_SSH2_IBME_EXTRA)
 
 int ssh2_cipher_crypt(ssh2_cipher_ctx *ctx, SSH2_CIPHER_T(algo),
                       int encrypt, unsigned char *block, size_t blocksize,
@@ -2921,6 +3127,8 @@ int ssh2_cipher_crypt(ssh2_cipher_ctx *ctx, SSH2_CIPHER_T(algo),
     return BCRYPT_SUCCESS(ret) ? 0 : -1;
 }
 
+#endif // defined (OPT_SSH2_IBME_EXTRA)
+
 void ssh2_cipher_dtor(ssh2_cipher_ctx *ctx)
 {
     BCryptDestroyKey(ctx->hKey);
@@ -2937,6 +3145,18 @@ void ssh2_cipher_dtor(ssh2_cipher_ctx *ctx)
     wcng_zero_free(ctx->pbCtr, ctx->dwCtrLength);
     ctx->pbCtr = NULL;
     ctx->dwCtrLength = 0;
+
+#if defined (OPT_SSH2_IBME_EXTRA)
+    if (ctx->precalculated_key_ctr) {
+      wcng_zero_free (ctx->precalculated_key_ctr, ctx->dwCtrLength * ctx->precalculated_key_count);
+    }
+    ctx->precalculated_key_ctr = NULL;
+
+    if (ctx->precalculated_key_aes) {
+      wcng_zero_free (ctx->precalculated_key_aes, ctx->dwCtrLength * ctx->precalculated_key_count);
+    }
+    ctx->precalculated_key_aes = NULL;
+#endif
 }
 
 /*******************************************************************/

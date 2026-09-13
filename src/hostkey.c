@@ -1227,6 +1227,10 @@ static const struct hostkey_method hostkey_method_ssh_ed25519_cert = {
 /*
  * Host Key order matches OpenSSH for compatibility
  */
+#if defined (OPT_SSH2_IBME_EXTRA)
+static const struct hostkey_method *hostkey_methods[50];
+static unsigned int nmethods = 0;
+#else
 static const struct hostkey_method *hostkey_methods[] = {
 #if LIBSSH2_ED25519
     &hostkey_method_ssh_ed25519_cert,
@@ -1265,10 +1269,67 @@ static const struct hostkey_method *hostkey_methods[] = {
 #endif /* LIBSSH2_DSA */
     NULL
 };
+#endif
 
 const struct hostkey_method **ssh2_hostkey_methods(void)
 {
-    return hostkey_methods;
+#if defined (OPT_SSH2_IBME_EXTRA)
+  if (nmethods == 0) {
+
+#if LIBSSH2_ED25519
+    hostkey_methods [nmethods++] = &hostkey_method_ssh_ed25519_cert;
+#endif
+
+#if LIBSSH2_ECDSA
+    if (enable_wincng_ecdsa) {
+      hostkey_methods [nmethods++] = &hostkey_method_ecdsa_ssh_nistp256_cert;
+      hostkey_methods [nmethods++] = &hostkey_method_ecdsa_ssh_nistp384_cert;
+      hostkey_methods [nmethods++] = &hostkey_method_ecdsa_ssh_nistp521_cert;
+    }
+#endif
+
+#if LIBSSH2_RSA
+#if LIBSSH2_RSA_SHA2
+    hostkey_methods [nmethods++] = &hostkey_method_ssh_rsa_sha2_512_cert;
+    hostkey_methods [nmethods++] = &hostkey_method_ssh_rsa_sha2_256_cert;
+#endif
+#endif
+
+#if LIBSSH2_ED25519
+    hostkey_methods [nmethods++] = &hostkey_method_ssh_ed25519;
+#endif
+
+#if LIBSSH2_ECDSA
+    if (enable_wincng_ecdsa) {
+      hostkey_methods [nmethods++] = &hostkey_method_ecdsa_ssh_nistp256;
+      hostkey_methods [nmethods++] = &hostkey_method_ecdsa_ssh_nistp384;
+      hostkey_methods [nmethods++] = &hostkey_method_ecdsa_ssh_nistp521;
+    }
+#endif
+
+#if LIBSSH2_RSA
+#if LIBSSH2_RSA_SHA2
+    hostkey_methods [nmethods++] = &hostkey_method_ssh_rsa_sha2_512;
+    hostkey_methods [nmethods++] = &hostkey_method_ssh_rsa_sha2_256;
+#endif /* LIBSSH2_RSA_SHA2 */
+
+#if LIBSSH2_RSA_SHA1
+    hostkey_methods [nmethods++] = &hostkey_method_ssh_rsa;
+    hostkey_methods [nmethods++] = &hostkey_method_ssh_rsa_cert;
+#endif /* LIBSSH2_RSA_SHA1 */
+#endif /* LIBSSH2_RSA */
+
+#if LIBSSH2_DSA
+    hostkey_methods [nmethods++] = &hostkey_method_ssh_dss;
+#endif /* LIBSSH2_DSA */
+
+    hostkey_methods [nmethods++] = NULL;
+  }
+
+  // dbg_printf ("ssh2_hostkey_methods, %u\n", nmethods);
+#endif
+
+  return hostkey_methods;
 }
 
 /*
