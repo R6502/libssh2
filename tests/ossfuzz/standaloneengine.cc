@@ -47,26 +47,24 @@ int main(int argc, char **argv)
 
                 printf("complete.");
 
-                /* Free the buffer as it's no longer needed. */
+                /* Free the buffer as it is no longer needed. */
                 free(buffer);
                 buffer = NULL;
             }
-            else {
+            else
                 fprintf(stderr,
                         "[%s] Failed to allocate %zu bytes \n",
                         argv[ii],
                         buffer_len);
-            }
 
-            /* Close the file as it's no longer needed. */
+            /* Close the file as it is no longer needed. */
             fclose(infile);
             infile = NULL;
         }
-        else {
+        else
             /* Failed to open the file.
                Maybe wrong name or wrong permissions? */
             fprintf(stderr, "[%s] Open failed. \n", argv[ii]);
-        }
 
         printf("\n");
     }

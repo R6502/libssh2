@@ -2,7 +2,7 @@
  *
  * Sample showing how to do SFTP append of a local file onto a remote one.
  *
- * The sample code has default values for host name, user name, password
+ * The sample code has default values for hostname, username, password
  * and path to copy, but you can specify them on the command line like:
  *
  * $ ./sftp_append 192.168.0.1 user password localfile /tmp/remotefile
@@ -64,24 +64,18 @@ int main(int argc, char *argv[])
     }
 #endif
 
-    if(argc > 1) {
+    if(argc > 1)
         hostaddr = inet_addr(argv[1]);
-    }
-    else {
+    else
         hostaddr = htonl(0x7F000001);
-    }
-    if(argc > 2) {
+    if(argc > 2)
         username = argv[2];
-    }
-    if(argc > 3) {
+    if(argc > 3)
         password = argv[3];
-    }
-    if(argc > 4) {
+    if(argc > 4)
         loclfile = argv[4];
-    }
-    if(argc > 5) {
+    if(argc > 5)
         sftppath = argv[5];
-    }
 
     rc = libssh2_init(0);
     if(rc) {
@@ -108,7 +102,7 @@ int main(int argc, char *argv[])
     sin.sin_family = AF_INET;
     sin.sin_port = htons(22);
     sin.sin_addr.s_addr = hostaddr;
-    if(connect(sock, (struct sockaddr*)(&sin), sizeof(struct sockaddr_in))) {
+    if(connect(sock, (struct sockaddr *)(&sin), sizeof(struct sockaddr_in))) {
         fprintf(stderr, "failed to connect.\n");
         goto shutdown;
     }
@@ -123,7 +117,7 @@ int main(int argc, char *argv[])
     /* Since we have set non-blocking, tell libssh2 we are blocking */
     libssh2_session_set_blocking(session, 1);
 
-    /* ... start it up. This will trade welcome banners, exchange keys,
+    /* ... start it up. This trades welcome banners, exchange keys,
      * and setup crypto, compression, and MAC layers
      */
     rc = libssh2_session_handshake(session, sock);
@@ -135,13 +129,12 @@ int main(int argc, char *argv[])
     /* At this point we have not yet authenticated.  The first thing to do
      * is check the hostkey's fingerprint against our known hosts Your app
      * may have it hard coded, may go to a file, may present it to the
-     * user, that's your call
+     * user, that is your call
      */
     fingerprint = libssh2_hostkey_hash(session, LIBSSH2_HOSTKEY_HASH_SHA1);
     fprintf(stderr, "Fingerprint: ");
-    for(i = 0; i < 20; i++) {
+    for(i = 0; i < 20; i++)
         fprintf(stderr, "%02X ", (unsigned char)fingerprint[i]);
-    }
     fprintf(stderr, "\n");
 
     if(auth_pw) {
@@ -179,7 +172,7 @@ int main(int argc, char *argv[])
                                     LIBSSH2_SFTP_S_IRGRP |
                                     LIBSSH2_SFTP_S_IROTH);
     if(!sftp_handle) {
-        fprintf(stderr, "Unable to open file with SFTP: %ld\n",
+        fprintf(stderr, "Unable to open file with SFTP: %lu\n",
                 libssh2_sftp_last_error(sftp_session));
         goto shutdown;
     }
@@ -190,11 +183,11 @@ int main(int argc, char *argv[])
     }
     else
         libssh2_sftp_seek64(sftp_handle, attrs.filesize);
-    fprintf(stderr, "Did a seek to position %ld\n", (long) attrs.filesize);
+    fprintf(stderr, "Did a seek to position %ld\n", (long)attrs.filesize);
 
     fprintf(stderr, "libssh2_sftp_open() a handle for APPEND\n");
     if(!sftp_handle) {
-        fprintf(stderr, "Unable to open file with SFTP: %ld\n",
+        fprintf(stderr, "Unable to open file with SFTP: %lu\n",
                 libssh2_sftp_last_error(sftp_session));
         goto shutdown;
     }
@@ -202,10 +195,8 @@ int main(int argc, char *argv[])
     fprintf(stderr, "libssh2_sftp_open() is done, now send data.\n");
     do {
         nread = fread(mem, 1, sizeof(mem), local);
-        if(nread <= 0) {
-            /* end of file */
-            break;
-        }
+        if(nread <= 0)
+            break;  /* end of file */
         ptr = mem;
 
         do {
@@ -229,7 +220,7 @@ shutdown:
     }
 
     if(sock != LIBSSH2_INVALID_SOCKET) {
-        shutdown(sock, 2);
+        shutdown(sock, 2 /* SHUT_RDWR */);
         LIBSSH2_SOCKET_CLOSE(sock);
     }
 

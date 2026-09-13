@@ -49,6 +49,8 @@ my @ignore_line;
 
 my %banfunc = (
     "_access" => 1,
+    "_fstati64" => 1,
+    "_lseeki64" => 1,
     "_mbscat" => 1,
     "_mbsncat" => 1,
     "_open" => 1,
@@ -70,6 +72,7 @@ my %banfunc = (
     "atoi" => 1,
     "atol" => 1,
     "calloc" => 1,
+    "close" => 1,
     "CreateFile" => 1,
     "CreateFileA" => 1,
     "CreateFileW" => 1,
@@ -80,9 +83,11 @@ my %banfunc = (
     "free" => 1,
     "freeaddrinfo" => 1,
     "freopen" => 1,
+    "fstat" => 1,
     "getaddrinfo" => 1,
     "gets" => 1,
     "gmtime" => 1,
+    "llseek" => 1,
     "LoadLibrary" => 1,
     "LoadLibraryA" => 1,
     "LoadLibraryEx" => 1,
@@ -90,6 +95,7 @@ my %banfunc = (
     "LoadLibraryExW" => 1,
     "LoadLibraryW" => 1,
     "localtime" => 1,
+    "lseek" => 1,
     "malloc" => 1,
     "mbstowcs" => 1,
     "MoveFileEx" => 1,
@@ -135,7 +141,7 @@ my %banfunc = (
 
 my %warnings_extended = (
     'COPYRIGHTYEAR'    => 'copyright year incorrect',
-    'STDERR',          => 'stderr detected',
+    'STDERR'           => 'stderr detected',
     );
 
 my %warnings = (
@@ -148,42 +154,46 @@ my %warnings = (
     'BRACEELSE'             => '} else on the same line',
     'BRACEPOS'              => 'wrong position for an open brace',
     'BRACEWHILE'            => 'A single space between open brace and while',
+    'CLOSEBRACE'            => 'close brace indent level vs line above is off',
     'COMMANOSPACE'          => 'comma without following space',
-    "CLOSEBRACE"            => 'close brace indent level vs line above is off',
     'COMMENTNOSPACEEND'     => 'no space before */',
     'COMMENTNOSPACESTART'   => 'no space following /*',
     'COPYRIGHT'             => 'file missing a copyright statement',
     'CPPCOMMENTS'           => '// comment detected',
+    'CPPSPACE'              => 'space before preprocessor hash',
     'DOBRACE'               => 'A single space between do and open brace',
     'EMPTYLINEBRACE'        => 'Empty line before the open brace',
     'EQUALSNOSPACE'         => 'equals sign without following space',
-    'EQUALSPACE'            => 'equals sign with too many spaces following',
     'EQUALSNULL'            => 'if/while comparison with == NULL',
+    'EQUALSPACE'            => 'equals sign with too many spaces following',
     'ERRNOVAR'              => 'use of bare errno define',
     'EXCLAMATIONSPACE'      => 'Whitespace after exclamation mark in expression',
     'FIXME'                 => 'FIXME or TODO comment',
     'FOPENMODE'             => 'fopen needs a macro for the mode string',
-    'IFDEFSINGLE',          => 'use ifdef/ifndef for single macro checks',
-    'INCLUDEDUP',           => 'same file is included again',
+    'IFDEFSINGLE'           => 'use ifdef/ifndef for single macro checks',
+    'INCLUDEDUP'            => 'same file is included again',
     'INDENTATION'           => 'wrong start column for code',
     'LONGLINE'              => "Line longer than $max_column",
-    'SPACEBEFORELABEL'      => 'labels not at the start of the line',
     'MULTISPACE'            => 'multiple spaces used when not suitable',
     'NOSPACEAND'            => 'missing space around Logical AND operator',
     'NOSPACEC'              => 'missing space around ternary colon operator',
     'NOSPACEEQUALS'         => 'equals sign without preceding space',
+    'NOSPACEPLUS'           => 'no space before plus sign',
     'NOSPACEQ'              => 'missing space around ternary question mark operator',
     'NOSPACETHAN'           => 'missing space around less or greater than',
-    'NOTEQUALSZERO',        => 'if/while comparison with != 0',
+    'NOTEQUALSZERO'         => 'if/while comparison with != 0',
     'ONELINECONDITION'      => 'conditional block on the same line as the if()',
     'OPENCOMMENT'           => 'file ended with a /* comment still "open"',
     'PARENBRACE'            => '){ without sufficient space',
+    'PLUSNOSPACE'           => 'no space after plus sign',
     'RETURNNOSPACE'         => 'return without space',
+    'RETURNPAREN'           => 'return with paren',
     'SEMINOSPACE'           => 'semicolon without following space',
     'SIZEOFNOPAREN'         => 'use of sizeof without parentheses',
     'SPACEAFTERPAREN'       => 'space after open parenthesis',
     'SPACEBEFORECLOSE'      => 'space before a close parenthesis',
     'SPACEBEFORECOMMA'      => 'space before a comma',
+    'SPACEBEFORELABEL'      => 'labels not at the start of the line',
     'SPACEBEFOREPAREN'      => 'space before an open parenthesis',
     'SPACESEMICOLON'        => 'space before semicolon',
     'SPACESWITCHCOLON'      => 'space before colon of switch label',
@@ -191,6 +201,7 @@ my %warnings = (
     'TRAILINGSPACE'         => 'Trailing whitespace on the line',
     'TYPEDEFSTRUCT'         => 'typedefed struct',
     'UNUSEDIGNORE'          => 'a warning ignore was not used',
+    'USESAFEFREE'           => 'replace curlx_free() + NULL assignment with curlx_safefree()',
     );
 
 sub readskiplist {
@@ -266,8 +277,8 @@ sub readlocalfile {
 sub checkwarn {
     my ($name, $num, $col, $file, $line, $msg, $error) = @_;
 
-    my $w=$error?"error":"warning";
-    my $nowarn=0;
+    my $w = $error ? "error" : "warning";
+    my $nowarn = 0;
 
     #if(!$warnings{$name}) {
     #    print STDERR "Dev! there is no description for $name!\n";
@@ -290,20 +301,20 @@ sub checkwarn {
 
     if($nowarn) {
         $suppressed++;
-        if($w) {
-            $swarnings++;
+        if($error) {
+            $serrors++;
         }
         else {
-            $serrors++;
+            $swarnings++;
         }
         return;
     }
 
-    if($w) {
-        $warnings++;
+    if($error) {
+        $errors++;
     }
     else {
-        $errors++;
+        $warnings++;
     }
 
     $col++;
@@ -332,7 +343,7 @@ while(defined $file) {
     }
     elsif($file =~ /^-b(.*)/) {
         $banfunc{$1} = $1;
-        print STDERR "ban use of \"$1\"\n";
+        # print STDERR "ban use of \"$1\"\n";
         $file = shift @ARGV;
         next;
     }
@@ -405,9 +416,9 @@ readskiplist();
 readlocalfile($file);
 
 do {
-    if("$wlist" !~ / $file /) {
+    if($wlist !~ / $file /) {
         my $fullname = $file;
-        $fullname = "$dir/$file" if($fullname !~ '^\.?\.?/');
+        $fullname = "$dir/$file" if($fullname !~ /^\.?\.?\//);
         scanfile($fullname);
     }
     $file = shift @ARGV;
@@ -436,7 +447,7 @@ sub checksrc_endoffile {
     for(keys %ignore_set) {
         if($ignore_set{$_} && !$ignore_used{$_}) {
             checkwarn("UNUSEDIGNORE", $ignore_set{$_},
-                      length($_)+11, $file,
+                      length($_) + 11, $file,
                       $ignore_line[$ignore_set{$_}],
                       "Unused ignore: $_");
         }
@@ -522,6 +533,8 @@ sub scanfile {
     my $l = "";
     my $prep = 0;
     my $prevp = 0;
+    my $prevfreeindent = "";
+    my $prevfreevar = "";
 
     if($verbose) {
         printf "Checking file: $file\n";
@@ -544,7 +557,7 @@ sub scanfile {
         # check for !checksrc! commands
         if($l =~ /\!checksrc\! (.*)/) {
             my $cmd = $1;
-            checksrc($cmd, $line, $file, $l)
+            checksrc($cmd, $line, $file, $l);
         }
 
         if($l =~ /^#line (\d+) \"([^\"]*)\"/) {
@@ -603,7 +616,7 @@ sub scanfile {
         if($l =~ /^(.*)\w\*\//) {
             checkwarn("COMMENTNOSPACEEND",
                       $line, length($1) + 1, $file, $l,
-                      "Missing space end comment end");
+                      "Missing space before comment end");
         }
 
         if($l =~ /(.*)(FIXME|TODO)/) {
@@ -660,7 +673,7 @@ sub scanfile {
                       $line, length($1), $file, $l, "\/\/ comment");
         }
 
-        if($l =~ /^\s*#\s*if\s+!?\s*defined\([a-zA-Z0-9_]+\)$/) {
+        if($l =~ /^(\s*#\s*if\s+!?\s*defined\()[a-zA-Z0-9_]+\)$/) {
             checkwarn("IFDEFSINGLE",
                       $line, length($1), $file, $l, "use ifdef/ifndef for single macro checks");
         }
@@ -674,6 +687,11 @@ sub scanfile {
             $includes{$path} = $l;
         }
 
+        # detect leading space before the hash
+        if($l =~ /^([ \t]+)\#/) {
+            checkwarn("CPPSPACE",
+                      $line, 0, $file, $l, "space before preprocessor hash");
+        }
         # detect and strip preprocessor directives
         if($l =~ /^[ \t]*\#/) {
             # preprocessor line
@@ -736,7 +754,7 @@ sub scanfile {
             my $cond = $4;
             if($cond =~ / = /) {
                 checkwarn("ASSIGNWITHINCONDITION",
-                          $line, $pos+1, $file, $l,
+                          $line, $pos + 1, $file, $l,
                           "assignment within conditional expression");
             }
             my $temp = $cond;
@@ -861,7 +879,7 @@ sub scanfile {
             }
         }
 
-        # check for "return" with parentheses around just a value/name
+        # check for "return" with parentheses around a value/name
         if($l =~ /^(.*\W)return \(\w*\);/) {
             checkwarn("RETURNPAREN", $line, length($1)+7, $file, $l,
                       "return with paren");
@@ -958,6 +976,24 @@ sub scanfile {
                       $line, length($1), $file, $ol, "no space before label");
         }
 
+        if($prevfreevar ne "") {
+            if(rindex($l, "$prevfreeindent$prevfreevar = NULL;", 0) == 0) {
+                checkwarn("USESAFEFREE",
+                          $line, length($prevfreeindent), $file, $ol,
+                          "replace curlx_free() + NULL assignment with curlx_safefree()");
+            }
+        }
+        if($l) {
+            if($l =~ /^( *)curlx_free\(([^)]+)\);/) {
+                $prevfreeindent = $1;
+                $prevfreevar = $2;
+            }
+            else {
+                $prevfreeindent = "";
+                $prevfreevar = "";
+            }
+        }
+
         # scan for use of banned functions
         my $bl = $l;
       again:
@@ -966,9 +1002,11 @@ sub scanfile {
             my $bad = $2;
             my $prefix = $1;
             my $suff = $3;
-            checkwarn("BANNEDFUNC",
-                      $line, length($prefix), $file, $ol,
-                      "use of $bad is banned");
+            if($prefix !~ /(->|\.)$/) {
+                checkwarn("BANNEDFUNC",
+                          $line, length($prefix), $file, $ol,
+                          "use of $bad is banned");
+            }
             my $search = quotemeta($prefix . $bad . $suff);
             my $replace = $prefix . 'x' x (length($bad) + 1);
             $l =~ s/$search/$replace/;
@@ -1175,14 +1213,14 @@ sub scanfile {
         # which are tracked in the Git repo and edited in the workdir, or
         # committed locally on the branch without being in upstream master.
         #
-        # The simple and naive test is to simply check for the current year,
+        # The simple and naive test is to check for the current year,
         # but updating the year even without an edit is against project policy
         # (and it would fail every file on January 1st).
         #
         # A rather more interesting, and correct, check would be to not test
         # only locally committed files but inspect all files wrt the year of
         # their last commit. Removing the `git rev-list origin/master..HEAD`
-        # condition below will enforce copyright year checks against the year
+        # condition below enforces copyright year checks against the year
         # the file was last committed (and thus edited to some degree).
         my $commityear = undef;
         @copyright = sort {$$b{year} cmp $$a{year}} @copyright;
@@ -1216,7 +1254,6 @@ sub scanfile {
     checksrc_endoffile($file);
 
     close($R);
-
 }
 
 if($errors || $warnings || $verbose) {

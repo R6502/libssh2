@@ -8,7 +8,7 @@
 #include "runner.h"
 #include "openssh_fixture.h"
 
-#include <stdlib.h>  /* for getenv() */
+#include <stdlib.h>  /* for atoi(), getenv() */
 
 /* set in Dockerfile */
 static const char *username = "libssh2";
@@ -19,7 +19,7 @@ int test(LIBSSH2_SESSION *session)
 {
     int rc;
     unsigned long xfer_bytes = 0;
-    LIBSSH2_CHANNEL *channel;
+    LIBSSH2_CHANNEL *channel = NULL;
 
     /* Size and number of blocks to transfer
      * This needs to be large to increase the chance of timing effects causing
@@ -81,14 +81,14 @@ int test(LIBSSH2_SESSION *session)
 
     env = getenv("FIXTURE_XFER_COUNT");
     if(env) {
-        xfer_count = (unsigned long)strtol(env, NULL, 0);
+        xfer_count = (unsigned long)atoi(env);
         fprintf(stderr, "Custom xfer_count: %lu\n", xfer_count);
     }
 
     /* command to transfer the desired amount of data */
-    snprintf(remote_command, sizeof(remote_command),
-             "dd if=/dev/zero bs=%lu count=%lu status=none",
-             xfer_bs, xfer_count);
+    ssh2_snprintf(remote_command, sizeof(remote_command),
+                  "dd if=/dev/zero bs=%lu count=%lu status=none",
+                  xfer_bs, xfer_count);
 
     /* Send the command to transfer data */
     if(libssh2_channel_exec(channel, remote_command)) {
@@ -104,10 +104,10 @@ int test(LIBSSH2_SESSION *session)
             fprintf(stderr, "Unable to read response: %ld\n", (long)err);
         else {
             unsigned int i;
-            for(i = 0; i < (unsigned long)err; ++i) {
+            for(i = 0; i < (unsigned int)err; ++i) {
                 if(buf[i]) {
                     fprintf(stderr, "Bad data received\n");
-                    /* Test will fail below due to bad data length */
+                    /* Test fails below due to bad data length */
                     break;
                 }
             }
@@ -115,16 +115,14 @@ int test(LIBSSH2_SESSION *session)
         }
     }
 
-    /* Shut down */
-    if(libssh2_channel_close(channel))
-        fprintf(stderr, "Unable to close channel\n");
+shutdown:
 
     if(channel) {
-        libssh2_channel_free(channel);
-        channel = NULL;
-    }
+        if(libssh2_channel_close(channel))
+            fprintf(stderr, "Unable to close channel\n");
 
-shutdown:
+        libssh2_channel_free(channel);
+    }
 
     /* Test check */
     if(xfer_bytes != xfer_count * xfer_bs) {

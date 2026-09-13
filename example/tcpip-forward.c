@@ -15,6 +15,9 @@
 #ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
 #endif
+#ifdef HAVE_SYS_SELECT_H
+#include <sys/select.h>
+#endif
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
@@ -24,13 +27,16 @@
 #ifdef HAVE_ARPA_INET_H
 #include <arpa/inet.h>
 #endif
+#ifdef HAVE_SYS_TIME_H
+#include <sys/time.h>  /* for timeval */
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #ifndef INADDR_NONE
-#define INADDR_NONE (in_addr_t)~0
+#define INADDR_NONE ((in_addr_t)~0)
 #endif
 
 static const char *pubkey = "/home/username/.ssh/id_rsa.pub";
@@ -117,7 +123,7 @@ int main(int argc, char *argv[])
         goto shutdown;
     }
     sin.sin_port = htons(22);
-    if(connect(sock, (struct sockaddr*)(&sin), sizeof(struct sockaddr_in))) {
+    if(connect(sock, (struct sockaddr *)(&sin), sizeof(struct sockaddr_in))) {
         fprintf(stderr, "Failed to connect to %s.\n", inet_ntoa(sin.sin_addr));
         goto shutdown;
     }
@@ -129,7 +135,7 @@ int main(int argc, char *argv[])
         goto shutdown;
     }
 
-    /* ... start it up. This will trade welcome banners, exchange keys,
+    /* ... start it up. This trades welcome banners, exchange keys,
      * and setup crypto, compression, and MAC layers
      */
     rc = libssh2_session_handshake(session, sock);
@@ -141,7 +147,7 @@ int main(int argc, char *argv[])
     /* At this point we have not yet authenticated.  The first thing to do
      * is check the hostkey's fingerprint against our known hosts Your app
      * may have it hard coded, may go to a file, may present it to the
-     * user, that's your call
+     * user, that is your call
      */
     fingerprint = libssh2_hostkey_hash(session, LIBSSH2_HOSTKEY_HASH_SHA1);
     fprintf(stderr, "Fingerprint: ");
@@ -180,9 +186,8 @@ int main(int argc, char *argv[])
                 fprintf(stderr, "Authentication by public key failed.\n");
                 goto shutdown;
             }
-            else {
+            else
                 fprintf(stderr, "Authentication by public key succeeded.\n");
-            }
         }
         else {
             fprintf(stderr, "No supported authentication methods found.\n");
@@ -297,8 +302,7 @@ int main(int argc, char *argv[])
             if(LIBSSH2_ERROR_EAGAIN == len)
                 break;
             else if(len < 0) {
-                fprintf(stderr, "libssh2_channel_read: %ld",
-                        (long)len);
+                fprintf(stderr, "libssh2_channel_read: %ld", (long)len);
                 goto shutdown;
             }
             wr = 0;
@@ -321,7 +325,7 @@ int main(int argc, char *argv[])
 shutdown:
 
     if(forwardsock != LIBSSH2_INVALID_SOCKET) {
-        shutdown(forwardsock, 2);
+        shutdown(forwardsock, 2 /* SHUT_RDWR */);
         LIBSSH2_SOCKET_CLOSE(forwardsock);
     }
 
@@ -337,7 +341,7 @@ shutdown:
     }
 
     if(sock != LIBSSH2_INVALID_SOCKET) {
-        shutdown(sock, 2);
+        shutdown(sock, 2 /* SHUT_RDWR */);
         LIBSSH2_SOCKET_CLOSE(sock);
     }
 
