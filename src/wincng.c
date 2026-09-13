@@ -79,12 +79,13 @@
  * Windows CNG backend: Missing definitions (for mingw-w64 and MS SDK)
  */
 
-/* BCRYPT_KDF_RAW_SECRET is available from Windows 8.1 and onwards */
-#ifndef BCRYPT_KDF_RAW_SECRET /* supported by mingw-w64 9.0+ and VS2017+ */
+/* Offered by mingw-w64 9+, MS SDK 10.0.14393.0/VS2015-u3+ */
+#ifndef BCRYPT_KDF_RAW_SECRET
 #define BCRYPT_KDF_RAW_SECRET L"TRUNCATE"
 #endif
 
-#ifndef BCRYPT_MESSAGE_BLOCK_LENGTH /* supported by mingw-w64 and VS2017+ */
+/* Offered by mingw-w64 3+, MS SDK 8.0/~VS2012+ */
+#ifndef BCRYPT_MESSAGE_BLOCK_LENGTH
 #define BCRYPT_MESSAGE_BLOCK_LENGTH L"MessageBlockLength"
 #endif
 
@@ -2705,6 +2706,7 @@ cleanup:
 
     return ret;
 }
+#endif /* LIBSSH2_RSA || LIBSSH2_DSA */
 
 int ssh2_pub_privkey(LIBSSH2_SESSION *session, char **method,
                      unsigned char **pubkeydata, size_t *pubkeydata_len,
@@ -2712,6 +2714,7 @@ int ssh2_pub_privkey(LIBSSH2_SESSION *session, char **method,
                      const char *privkeyblob, size_t privkeyblob_len,
                      const char *passphrase)
 {
+#if LIBSSH2_RSA || LIBSSH2_DSA
     unsigned char *pbEncoded;
     size_t cbEncoded;
 
@@ -2723,8 +2726,21 @@ int ssh2_pub_privkey(LIBSSH2_SESSION *session, char **method,
     return wcng_pub_priv_parse(session, method,
                                pubkeydata, pubkeydata_len,
                                pbEncoded, cbEncoded);
+#else
+    (void)session;
+    (void)method;
+    (void)pubkeydata;
+    (void)pubkeydata_len;
+    (void)privkeyfile;
+    (void)privkeyblob;
+    (void)privkeyblob_len;
+    (void)passphrase;
+
+    /* FIXME: add ECDSA support */
+
+    return -1;
+#endif
 }
-#endif /* LIBSSH2_RSA || LIBSSH2_DSA */
 
 /*******************************************************************/
 /*
@@ -3210,6 +3226,7 @@ int ssh2_dh_secret(ssh2_dh_ctx *dhctx, ssh2_bn *secret,
                                  0, &secret_len_bytes, 0);
         if(!BCRYPT_SUCCESS(status)) {
             if(status == STATUS_NOT_SUPPORTED)
+                /* Before Windows 10.14393 / Server 2016 */
                 ssh2_wcng.hasAlgDHwithKDF = -1;
             goto out;
         }
@@ -3227,6 +3244,7 @@ int ssh2_dh_secret(ssh2_dh_ctx *dhctx, ssh2_bn *secret,
                                  &secret_len_bytes, 0);
         if(!BCRYPT_SUCCESS(status)) {
             if(status == STATUS_NOT_SUPPORTED)
+                /* Before Windows 10.14393 / Server 2016 */
                 ssh2_wcng.hasAlgDHwithKDF = -1;
             goto out;
         }

@@ -17,6 +17,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions: {}
+cache-mode: none
 
 env:
   DO_NOT_TRACK: '1'
@@ -68,7 +69,10 @@ jobs:
           eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
           actionlint --version
           export SHELLCHECK_OPTS='--exclude=1090,1091,2086,2153 --enable=avoid-nullary-conditions,deprecate-which'
-          actionlint --ignore ubuntu-26.04 .github/workflows/*.yml
+          actionlint \
+            --ignore ubuntu-26.04 \
+            --ignore 'unexpected key "cache-mode"' \
+            .github/workflows/*.yml
 
       - name: 'shellcheck GHA'
         run: |
@@ -81,7 +85,7 @@ jobs:
               echo '#!/usr/bin/env bash'
               echo 'set -eu'
               yq eval '.. | select(has("run") and (.run | type == "!!str")) | .run + "\ntrue\n"' "${f}"
-            } | sed -E 's|\$\{\{ .+ \}\}|GHA_EXPRESSION|g' | shellcheck -
+            } | shellcheck -
           done
 
       - name: 'shellcheck'
@@ -238,6 +242,7 @@ jobs:
     name: 'linux'
     runs-on: ${{ matrix.compiler == 'clang-tidy' && 'ubuntu-26.04' || (matrix.image || 'ubuntu-latest') }}
     timeout-minutes: 10
+    cache-mode: write
     strategy:
       fail-fast: false
       matrix:
@@ -249,17 +254,17 @@ jobs:
         exclude:
           - { compiler: clang-tidy, zlib: 'OFF' }
         include:
-          - { compiler: gcc  , arch: amd64, crypto: AWS-LC                  , build: 'CM', zlib: 'ON' }
+          - { compiler: gcc  , arch: arm64, crypto: AWS-LC                  , build: 'CM', zlib: 'ON', image: ubuntu-26.04-arm }
           - { compiler: gcc  , arch: amd64, crypto: BoringSSL               , build: 'CM', zlib: 'ON', options: '-DENABLE_DEBUG_LOGGING=ON' }
           - { compiler: gcc  , arch: amd64, crypto: LibreSSL                , build: 'CM', zlib: 'ON' }
           - { compiler: gcc  , arch: i386 , crypto: mbedTLS-from-source     , build: 'CM', zlib: 'ON', image: ubuntu-26.04 }
           - { compiler: gcc  , arch: amd64, crypto: OpenSSL                 , build: 'AM', zlib: 'OFF', test: 'legacy-options' }
-          - { compiler: clang, arch: amd64, crypto: OpenSSL                 , build: 'AM', zlib: 'OFF' }
+          - { compiler: clang, arch: amd64, crypto: OpenSSL                 , build: 'AM', zlib: 'OFF', container: 'podman' }
           - { compiler: clang, arch: amd64, crypto: OpenSSL                 , build: 'AM', zlib: 'ON', target: 'distcheck' }
           - { compiler: clang, arch: amd64, crypto: OpenSSL                 , build: 'AM', zlib: 'ON', target: 'maketgz' }
-          - { compiler: gcc  , arch: amd64, crypto: OpenSSL-3-no-deprecated , build: 'CM', zlib: 'ON', image: ubuntu-26.04 }
+          - { compiler: gcc  , arch: amd64, crypto: OpenSSL-3-no-deprecated , build: 'CM', zlib: 'ON', image: ubuntu-26.04, container: 'podman' }
           - { compiler: gcc  , arch: amd64, crypto: OpenSSL-111-from-source , build: 'CM', zlib: 'ON', image: ubuntu-26.04 }
-          - { compiler: clang, arch: amd64, crypto: wolfSSL-from-source     , build: 'CM', zlib: 'ON', image: ubuntu-26.04 }
+          - { compiler: clang, arch: amd64, crypto: wolfSSL-from-source     , build: 'CM', zlib: 'ON', image: ubuntu-26.04, container: 'podman' }
           - { compiler: clang, arch: amd64, crypto: wolfSSL-from-source-prev, build: 'CM', zlib: 'ON', image: ubuntu-26.04 }
     env:
       CC: ${{ matrix.compiler == 'clang-tidy' && 'clang' || matrix.compiler }}
@@ -291,7 +296,7 @@ jobs:
       WOLFSSL_SHA256_PREV: b7ee150e49def77c765bc02aac92ddeb0bebefd4cb12aa263d8f95e405221fb8
     steps:
       - name: 'install architecture'
-        if: ${{ matrix.arch != 'amd64' }}
+        if: ${{ matrix.arch == 'i386' }}
         timeout-minutes: 2
         run: |
           sudo find /etc/apt/sources.list.d -type f -not -name 'ubuntu.sources' -delete -print
@@ -591,6 +596,8 @@ jobs:
       - name: 'tests'
         if: ${{ !matrix.target }}
         timeout-minutes: 10
+        env:
+          FIXTURE_CONTAINER_CMD: ${{ matrix.container || 'docker' }}
         run: |
           if [ "${MATRIX_CRYPTO}" = 'OpenSSL-3-no-deprecated' ] || [[ "${MATRIX_CRYPTO}" = 'OpenSSL' && "${MATRIX_COMPILER}" = 'clang-tidy' ]]; then
             export FIXTURE_TRACE_ALL_CONNECT=1  # to debug OpenSSL (ML-KEM) flaky CI failures
@@ -748,9 +755,10 @@ jobs:
       - uses: cygwin/cygwin-install-action@3f0a3f9f988f7e96b8c18098ae05eaec175f5b52 # v6.0.2
         with:
           platform: ${{ matrix.platform }}
-          packages: ${{ matrix.build == 'AM' && 'autoconf automake libtool make' || 'cmake ninja' }} gcc-core gcc-g++ binutils libssl-devel zlib-devel
-          site: https://mirrors.kernel.org/sourceware/cygwin/
           work-vol: 'D:'
+          site: https://mirrors.kernel.org/sourceware/cygwin/
+          # https://cygwin.com/packages/
+          packages: ${{ matrix.build == 'AM' && 'autoconf automake libtool make' || 'cmake ninja' }} gcc-core gcc-g++ binutils libssl-devel zlib-devel
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -824,6 +832,7 @@ jobs:
     name: 'msys2'
     runs-on: windows-2022
     timeout-minutes: 10
+    cache-mode: write
     defaults:
       run:
         shell: msys2 {0}  # zizmor: ignore[misfeature]
@@ -1104,6 +1113,7 @@ jobs:
         env:
           INSTALL_PACKAGES: ${{ matrix.build == 'AM' && 'automake libtool' || '' }}
         run: brew install ${INSTALL_PACKAGES} ${MATRIX_INSTALL}
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -1193,16 +1203,16 @@ jobs:
       matrix:
         include:
           # https://github.com/DragonFlyBSD/DPorts
-          # { os: 'dragonflybsd', version: '6.4.2', build: 'AM', arch: 'x86_64', cc: 'gcc'  , desc: 'libgcrypt skiprun',
-          #   install: 'autoconf automake libtool libgcrypt',
-          #   options: '--with-crypto=libgcrypt --with-libgcrypt-prefix=/usr/local' }
+          - { os: 'dragonflybsd', version: '6.4.2', build: 'AM', arch: 'x86_64', cc: 'gcc'  , desc: 'libgcrypt skiprun',
+              install: 'autoconf automake libtool libgcrypt',
+              options: '--with-crypto=libgcrypt --with-libgcrypt-prefix=/usr/local' }
 
           # https://ports.freebsd.org/
           - { os: 'freebsd'     , version: '15.1',  build: 'AM', arch: 'x86_64', cc: 'clang', desc: 'openssl',
               install: 'autoconf automake libtool gettext',
               options: '--with-crypto=openssl' }
 
-          - { os: 'freebsd'     , version: '14.3',  build: 'CM', arch: 'arm64' , cc: 'clang', desc: 'openssl skiprun',
+          - { os: 'freebsd'     , version: '14.5',  build: 'CM', arch: 'arm64' , cc: 'clang', desc: 'openssl skiprun',
               install: 'cmake-core ninja',
               options: '-DCRYPTO_BACKEND=OpenSSL' }
 
@@ -1234,7 +1244,7 @@ jobs:
           persist-credentials: false
 
       - name: 'setup VM'
-        uses: cross-platform-actions/action@faa0c6197e94aacf1c5956460152c8380d3560a5 # v1.5.0
+        uses: cross-platform-actions/action@e0b9770014ba65d5e0815f15b74031c3a635f641 # v1.6.0
         with:
           environment_variables: 'CC CURL_CI CURL_TEST_MIN DO_NOT_TRACK MAKEFLAGS MATRIX_BUILD MATRIX_INSTALL MATRIX_OPTIONS MATRIX_OS'
           operating_system: '${{ matrix.os }}'
@@ -1317,6 +1327,7 @@ jobs:
     name: 'curl, CM ${{ matrix.arch }}-${{ matrix.plat }} ${{ matrix.name }}'
     runs-on: '${{ matrix.image }}'
     timeout-minutes: 10
+    cache-mode: write
     defaults:
       run:
         shell: msys2 {0}  # zizmor: ignore[misfeature]

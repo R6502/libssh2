@@ -8,7 +8,7 @@
 # NOTE: test_auth_keyboard_info_request does not use the network, but when
 #       run as Windows standalone test, it intermittently fails on GHA with:
 #         `Terminate batch job (Y/N)?`
-DOCKER_TESTS = \
+CONTAINER_TESTS = \
   test_aa_warmup \
   test_agent_forward_ok \
   test_auth_keyboard_fail \
@@ -51,7 +51,7 @@ SSHD_TESTS = \
 
 # Programs of the above that use internal libssh2 functions so they need
 # to be statically linked against libssh2
-DOCKER_TESTS_STATIC = \
+CONTAINER_TESTS_STATIC = \
   test_auth_keyboard_info_request \
   test_hostkey
 
@@ -78,18 +78,20 @@ EXTRA_DIST = \
   keys/ca_host_ecdsa.pub \
   keys/ca_host_ed25519 \
   keys/ca_host_ed25519.pub \
+  keys/ca_host_mldsa44-ed25519 \
+  keys/ca_host_mldsa44-ed25519.pub \
   keys/ca_host_rsa \
   keys/ca_host_rsa.pub \
   keys/ca_user_ecdsa \
   keys/ca_user_ecdsa.pub \
   keys/ca_user_ed25519 \
   keys/ca_user_ed25519.pub \
+  keys/ca_user_mldsa44-ed25519 \
+  keys/ca_user_mldsa44-ed25519.pub \
   keys/ca_user_rsa \
   keys/ca_user_rsa.pub \
   keys/id_dsa \
   keys/id_dsa.pub \
-  keys/id_dsa_wrong \
-  keys/id_dsa_wrong.pub \
   keys/id_ecdsa_openssh \
   keys/id_ecdsa_openssh.pub \
   keys/id_ecdsa_openssh_encrypted \
@@ -116,6 +118,13 @@ EXTRA_DIST = \
   keys/id_ed25519_pkcs8.pub \
   keys/id_ed25519_pkcs8_encrypted \
   keys/id_ed25519_pkcs8_encrypted.pub \
+  keys/id_mldsa44-ed25519 \
+  keys/id_mldsa44-ed25519.pub \
+  keys/id_mldsa44-ed25519_encrypted \
+  keys/id_mldsa44-ed25519_encrypted.pub \
+  keys/id_mldsa44-ed25519_signed \
+  keys/id_mldsa44-ed25519_signed-cert.pub \
+  keys/id_mldsa44-ed25519_signed.pub \
   keys/id_rsa_openssh \
   keys/id_rsa_openssh.pub \
   keys/id_rsa_openssh_encrypted \
@@ -124,6 +133,8 @@ EXTRA_DIST = \
   keys/id_rsa_pem.pub \
   keys/id_rsa_pem_encrypted \
   keys/id_rsa_pem_encrypted.pub \
+  keys/id_rsa_pem_miss \
+  keys/id_rsa_pem_miss.pub \
   keys/id_rsa_pem_sha2_512_signed \
   keys/id_rsa_pem_sha2_512_signed-cert.pub \
   keys/id_rsa_pem_sha2_512_signed.pub \
@@ -143,6 +154,9 @@ EXTRA_DIST = \
   openssh_server/ssh_host_ed25519_key \
   openssh_server/ssh_host_ed25519_key-cert.pub \
   openssh_server/ssh_host_ed25519_key.pub \
+  openssh_server/ssh_host_mldsa44-ed25519_key \
+  openssh_server/ssh_host_mldsa44-ed25519_key-cert.pub \
+  openssh_server/ssh_host_mldsa44-ed25519_key.pub \
   openssh_server/ssh_host_rsa_key \
   openssh_server/ssh_host_rsa_key-cert.pub \
   openssh_server/ssh_host_rsa_key.pub \
