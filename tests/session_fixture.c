@@ -97,7 +97,7 @@ static char const *skip_mac[] = {
     NULL
 };
 
-/* List of HOSTKEY algorithms for which tests are skipped */
+/* List of host key algorithms for which tests are skipped */
 static char const *skip_hostkey[] = {
 #if !LIBSSH2_ECDSA
     "ecdsa-sha2-nistp256-cert-v01@openssh.com",
@@ -155,7 +155,7 @@ LIBSSH2_SESSION *start_session_fixture(int *skipped, int *err)
         for(sk = skip_hostkey; *sk; ++sk) {
             if(!strcmp(*sk, hostkey)) {
                 fprintf(stderr,
-                        "unsupported HOSTKEY algorithm (%s) skipped.\n",
+                        "unsupported host key algorithm (%s) skipped.\n",
                         hostkey);
                 *skipped = 1;
                 return NULL;
@@ -212,7 +212,7 @@ LIBSSH2_SESSION *start_session_fixture(int *skipped, int *err)
         return NULL;
     }
 
-    /* Without an explicit override, limit accepted hostkey types to those
+    /* Without an explicit override, limit accepted host key types to those
        tested (or potentially tested) in test_hostkey.c and
        test_hostkey_hash.c. */
     if(!hostkey)
@@ -227,7 +227,7 @@ LIBSSH2_SESSION *start_session_fixture(int *skipped, int *err)
 
     if(libssh2_session_method_pref(connected_session,
                                    LIBSSH2_METHOD_HOSTKEY, hostkey)) {
-        fprintf(stderr, "libssh2_session_method_pref() HOSTKEY failed "
+        fprintf(stderr, "libssh2_session_method_pref() host key failed "
                         "(probably disabled in the build): '%s'\n", hostkey);
         return NULL;
     }
@@ -488,8 +488,8 @@ int test_auth_pubkey(LIBSSH2_SESSION *session, int flags,
     int rc;
     const char *userauth_list;
 
-    /* Ignore our hard-wired Dockerfile user when not running under Docker */
-    if(!openssh_fixture_have_docker() && !strcmp(username, "libssh2")) {
+    /* Ignore our hard-wired Dockerfile user when not using a container */
+    if(!openssh_fixture_have_container() && !strcmp(username, "libssh2")) {
         username = getenv("USER");
         if(!username)
 #ifdef _WIN32
