@@ -104,11 +104,6 @@ struct agent_transaction_ctx {
     size_t send_recv_total;
 };
 
-typedef int (*agent_connect_func)(LIBSSH2_AGENT *agent);
-typedef int (*agent_transact_func)(LIBSSH2_AGENT *agent,
-                                   struct agent_transaction_ctx *transctx);
-typedef int (*agent_disconnect_func)(LIBSSH2_AGENT *agent);
-
 struct agent_publickey {
     struct list_node node;
 
@@ -117,9 +112,11 @@ struct agent_publickey {
 };
 
 struct agent_ops {
-    const agent_connect_func connect;
-    const agent_transact_func transact;
-    const agent_disconnect_func disconnect;
+    int (*connect_it)(LIBSSH2_AGENT *agent);  /* prevent name clash with
+                                                 POSIX connect() */
+    int (*transact)(LIBSSH2_AGENT *agent,
+                    struct agent_transaction_ctx *transctx);
+    int (*disconnect)(LIBSSH2_AGENT *agent);
 };
 
 struct _LIBSSH2_AGENT {
@@ -654,7 +651,7 @@ static int agent_transact_unix(LIBSSH2_AGENT *agent,
     /* Send the length of the request */
     if(transctx->state == agent_NB_state_request_created) {
         ssh2_htonu32(buf, (uint32_t)transctx->request_len);
-        rc = (int)agent_send_all(agent->session->send, agent->fd,
+        rc = (int)agent_send_all(agent->session->send_cb, agent->fd,
                                  buf, sizeof(buf), 0,
                                  &agent->session->abstract);
         if(rc == -EAGAIN)
@@ -667,7 +664,7 @@ static int agent_transact_unix(LIBSSH2_AGENT *agent,
 
     /* Send the request body */
     if(transctx->state == agent_NB_state_request_length_sent) {
-        rc = (int)agent_send_all(agent->session->send, agent->fd,
+        rc = (int)agent_send_all(agent->session->send_cb, agent->fd,
                                  transctx->request, transctx->request_len, 0,
                                  &agent->session->abstract);
         if(rc == -EAGAIN)
@@ -680,7 +677,7 @@ static int agent_transact_unix(LIBSSH2_AGENT *agent,
 
     /* Receive the length of the response */
     if(transctx->state == agent_NB_state_request_sent) {
-        rc = (int)agent_recv_all(agent->session->recv, agent->fd,
+        rc = (int)agent_recv_all(agent->session->recv_cb, agent->fd,
                                  buf, sizeof(buf), 0,
                                  &agent->session->abstract);
         if(rc < 0) {
@@ -705,7 +702,7 @@ static int agent_transact_unix(LIBSSH2_AGENT *agent,
 
     /* Receive the response body */
     if(transctx->state == agent_NB_state_response_length_received) {
-        rc = (int)agent_recv_all(agent->session->recv, agent->fd,
+        rc = (int)agent_recv_all(agent->session->recv_cb, agent->fd,
                                  transctx->response, transctx->response_len, 0,
                                  &agent->session->abstract);
         if(rc < 0) {
@@ -1129,9 +1126,13 @@ LIBSSH2_AGENT *libssh2_agent_init(LIBSSH2_SESSION *session)
 int libssh2_agent_connect(LIBSSH2_AGENT *agent)
 {
     int i, rc = LIBSSH2_ERROR_METHOD_NOT_SUPPORTED;
+
+    if(!agent)
+        return LIBSSH2_ERROR_BAD_USE;
+
     for(i = 0; agent_supported_backends[i].name; i++) {
         agent->ops = agent_supported_backends[i].ops;
-        rc = agent->ops->connect(agent);
+        rc = agent->ops->connect_it(agent);
         if(!rc)
             return LIBSSH2_ERROR_NONE;
     }
@@ -1145,6 +1146,9 @@ int libssh2_agent_connect(LIBSSH2_AGENT *agent)
  */
 int libssh2_agent_list_identities(LIBSSH2_AGENT *agent)
 {
+    if(!agent)
+        return LIBSSH2_ERROR_BAD_USE;
+
     memset(&agent->transctx, 0, sizeof(agent->transctx));
     /* Abandon the last fetched identities */
     agent_free_identities(agent);
@@ -1166,6 +1170,10 @@ int libssh2_agent_get_identity(LIBSSH2_AGENT *agent,
                                struct libssh2_agent_publickey *prev)
 {
     struct agent_publickey *node;
+
+    if(!agent)
+        return LIBSSH2_ERROR_BAD_USE;
+
     if(prev && prev->node) {
         /* we have a starting point */
         struct agent_publickey *prev_node = prev->node;
@@ -1196,6 +1204,9 @@ int libssh2_agent_userauth(LIBSSH2_AGENT *agent,
 {
     void *abstract = agent;
     int rc;
+
+    if(!agent)
+        return LIBSSH2_ERROR_BAD_USE;
 
     if(agent->session->userauth_pblc_state == ssh2_NB_state_idle) {
         memset(&agent->transctx, 0, sizeof(agent->transctx));
@@ -1229,6 +1240,9 @@ int libssh2_agent_sign(LIBSSH2_AGENT *agent,
     void *abstract = agent;
     int rc;
     uint32_t key_kind_len;
+
+    if(!agent)
+        return LIBSSH2_ERROR_BAD_USE;
 
     if(agent->session->userauth_pblc_state == ssh2_NB_state_idle) {
         memset(&agent->transctx, 0, sizeof(agent->transctx));
@@ -1273,6 +1287,9 @@ cleanup:
  */
 int libssh2_agent_disconnect(LIBSSH2_AGENT *agent)
 {
+    if(!agent)
+        return LIBSSH2_ERROR_BAD_USE;
+
     if(agent->ops && agent->fd != LIBSSH2_INVALID_SOCKET)
         return agent->ops->disconnect(agent);
     return LIBSSH2_ERROR_NONE;
@@ -1284,6 +1301,9 @@ int libssh2_agent_disconnect(LIBSSH2_AGENT *agent)
  */
 void libssh2_agent_free(LIBSSH2_AGENT *agent)
 {
+    if(!agent)
+        return;
+
     /* Allow connection freeing when the socket has lost its connection */
     if(agent->fd != LIBSSH2_INVALID_SOCKET)
         libssh2_agent_disconnect(agent);
@@ -1300,6 +1320,9 @@ void libssh2_agent_free(LIBSSH2_AGENT *agent)
  */
 void libssh2_agent_set_identity_path(LIBSSH2_AGENT *agent, const char *path)
 {
+    if(!agent)
+        return;
+
     if(agent->identity_agent_path)
         SSH2_SAFEFREE(agent->session, agent->identity_agent_path);
 
@@ -1321,5 +1344,8 @@ void libssh2_agent_set_identity_path(LIBSSH2_AGENT *agent, const char *path)
  */
 const char *libssh2_agent_get_identity_path(LIBSSH2_AGENT *agent)
 {
+    if(!agent)
+        return NULL;
+
     return agent->identity_agent_path;
 }

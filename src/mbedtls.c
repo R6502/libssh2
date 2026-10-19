@@ -547,7 +547,6 @@ int ssh2_rsa_new_priv(ssh2_rsa_ctx **rsa,
     return 0;
 }
 
-#if LIBSSH2_RSA_SHA2
 int ssh2_rsa_sha2_verify(ssh2_rsa_ctx *rsa, LIBSSH2_SESSION *session,
                          size_t hash_len,
                          const unsigned char *sig, size_t sig_len,
@@ -565,12 +564,15 @@ int ssh2_rsa_sha2_verify(ssh2_rsa_ctx *rsa, LIBSSH2_SESSION *session,
     if(!hash)
         return -1;
 
+#if LIBSSH2_RSA_SHA1
     if(hash_len == SSH2_SHA1_DIG_LEN) {
         ret = psa_hash_compute(PSA_ALG_SHA_1, m, m_len, hash, hash_len,
                                &actual_len) == PSA_SUCCESS ? 0 : -1;
         md_type = MBEDTLS_MD_SHA1;
     }
-    else if(hash_len == SSH2_SHA256_DIG_LEN) {
+    else
+#endif
+    if(hash_len == SSH2_SHA256_DIG_LEN) {
         ret = psa_hash_compute(PSA_ALG_SHA_256, m, m_len, hash, hash_len,
                                &actual_len) == PSA_SUCCESS ? 0 : -1;
         md_type = MBEDTLS_MD_SHA256;
@@ -613,9 +615,12 @@ int ssh2_rsa_sha2_sign(ssh2_rsa_ctx *rsa, LIBSSH2_SESSION *session,
         return -1;
 
     ret = 0;
+#if LIBSSH2_RSA_SHA1
     if(hash_len == SSH2_SHA1_DIG_LEN)
         md_type = MBEDTLS_MD_SHA1;
-    else if(hash_len == SSH2_SHA256_DIG_LEN)
+    else
+#endif
+    if(hash_len == SSH2_SHA256_DIG_LEN)
         md_type = MBEDTLS_MD_SHA256;
     else if(hash_len == SSH2_SHA512_DIG_LEN)
         md_type = MBEDTLS_MD_SHA512;
@@ -640,7 +645,6 @@ int ssh2_rsa_sha2_sign(ssh2_rsa_ctx *rsa, LIBSSH2_SESSION *session,
 
     return ret == 0 ? 0 : -1;
 }
-#endif
 
 #if LIBSSH2_RSA_SHA1
 int ssh2_rsa_sha1_verify(ssh2_rsa_ctx *rsa, LIBSSH2_SESSION *session,
@@ -718,12 +722,15 @@ static int mbed_pub_priv_key(LIBSSH2_SESSION *session, char **method,
 {
     char *method_buf = NULL;
     unsigned char *key = NULL;
-    size_t keylen = 0, method_buf_len = 0;
+    size_t keylen = 0;
     int ret = 0;
+
+    (void)pkey;
 
 #if LIBSSH2_RSA
     if(mbedtls_pk_get_type(pkey) == MBEDTLS_PK_RSA) {
         mbedtls_rsa_context *rsa;
+        size_t method_buf_len;
 
         /* write method */
         method_buf_len = sizeof("ssh-rsa") - 1;

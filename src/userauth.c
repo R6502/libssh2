@@ -214,6 +214,7 @@ static char *userauth_list(LIBSSH2_SESSION *session, const char *username,
 
         methods_len = ssh2_ntohu32(session->userauth_list_data + 1);
         if(methods_len >= session->userauth_list_data_len - 5) {
+            SSH2_SAFEFREE(session, session->userauth_list_data);
             ssh2_err(session, LIBSSH2_ERROR_OUT_OF_BOUNDARY,
                      "Unexpected userauth list size");
             return NULL;
@@ -1442,8 +1443,10 @@ retry_auth:
         if(auth_attempts == 1) {
             rc = userauth_key_sign_algs(session,
                                         &session->userauth_pblc_method);
-            if(rc)
+            if(rc) {
+                SSH2_SAFEFREE(session, session->userauth_pblc_method);
                 return rc;
+            }
         }
 
         if(session->userauth_pblc_method && *session->userauth_pblc_method) {

@@ -79,8 +79,8 @@ static int run_command_varg(char **output, const char *command, va_list args)
     static const char redirect_stderr[] = "%s 2>&1";
 
     FILE *pipe;
-    char command_buf[BUFSIZ];
-    char buf[BUFSIZ + sizeof(redirect_stderr)];
+    char command_buf[8192];
+    char buf[64 * 1024]; /* sizeof(command_buf + " 2>&1") or larger */
     int ret;
     size_t buf_len;
 
@@ -98,12 +98,6 @@ static int run_command_varg(char **output, const char *command, va_list args)
 #endif
     if(ret < 0 || (size_t)ret >= sizeof(command_buf)) {
         fprintf(stderr, "Unable to format command (%s)\n", command);
-        return -1;
-    }
-
-    /* Rewrite the command to redirect stderr to stdout so we can output it */
-    if(strlen(command_buf) + strlen(redirect_stderr) >= sizeof(buf)) {
-        fprintf(stderr, "Unable to rewrite command (%s)\n", command);
         return -1;
     }
 
@@ -172,27 +166,17 @@ static int build_openssh_server_container_image(void)
     if(container_cmd) {
         const char *container_image_name = openssh_server_image();
         if(container_image_name) {
-            int ret;
-            if(strstr(container_cmd, "container")) {
-                ret = run_command(NULL, "%s image pull %s",
-                                  container_cmd, container_image_name);
-                if(ret == 0) {
-                    ret = run_command(NULL, "%s image tag %s "
-                                      "libssh2/openssh_server",
-                                      container_cmd, container_image_name);
-                    if(ret == 0)
-                        return ret;
-                }
-            }
-            else {
-                ret = run_command(NULL, "%s pull %s",
-                                  container_cmd, container_image_name);
-                if(ret == 0) {
-                    ret = run_command(NULL, "%s tag %s libssh2/openssh_server",
-                                      container_cmd, container_image_name);
-                    if(ret == 0)
-                        return ret;
-                }
+            int ret = run_command(NULL, "%s image pull %s%s", container_cmd,
+                                  /* Requires Apple container 0.7.0+ */
+                                  strstr(container_cmd, "container") ?
+                                      "--progress none " : "",
+                                  container_image_name);
+            if(!ret) {
+                ret = run_command(NULL, "%s image tag %s "
+                                  "libssh2/openssh_server", container_cmd,
+                                  container_image_name);
+                if(!ret)
+                    return ret;
             }
         }
         return run_command(NULL,
@@ -212,26 +196,40 @@ static int start_openssh_server(char **container_id_out)
 {
     if(container_cmd) {
         const char *container_host_port = openssh_server_port();
-        if(strstr(container_cmd, "container")) {
-            if(!container_host_port) {
-                fprintf(stderr, "OPENSSH_SERVER_PORT must be set\n");
-                return 1;
-            }
-            /* Requires Apple container 0.7.0+ for '--progress none' */
-            return run_command(container_id_out, "%s run --progress none "
-                               "--rm -d -p %s:22 libssh2/openssh_server",
-                               container_cmd, container_host_port);
+        if(strstr(container_cmd, "container") && !container_host_port) {
+            fprintf(stderr, "OPENSSH_SERVER_PORT must be set\n");
+            return 1;
         }
-        else if(container_host_port)
-            return run_command(container_id_out, "%s run "
+        if(container_host_port)
+            return run_command(container_id_out, "%s run %s"
                                "--rm -d -p %s:22 libssh2/openssh_server",
-                               container_cmd, container_host_port);
+                               container_cmd,
+                               /* Requires Apple container 0.7.0+ */
+                               strstr(container_cmd, "container") ?
+                                   "--progress none " : "",
+                               container_host_port);
         return run_command(container_id_out, "%s run --rm -d -p 22 "
                            "libssh2/openssh_server", container_cmd);
     }
     else {
         *container_id_out = libssh2_strdup("");
         return 0;
+    }
+}
+
+static void openssh_server_dump_logs(char *container_id)
+{
+    if(container_cmd) {
+        char *logs = NULL;
+        int ret;
+        ret = run_command(&logs, "%s logs %s", container_cmd, container_id);
+        if(ret)
+            fprintf(stderr, "Failed to query server logs: %d\n", ret);
+        else
+            fprintf(stderr,
+                    "---- sshd log ----\n%s\n"
+                    "------------------\n", logs);
+        free(logs);
     }
 }
 
@@ -473,9 +471,11 @@ int start_openssh_fixture(void)
     }
 }
 
-void stop_openssh_fixture(void)
+void stop_openssh_fixture(int exit_code)
 {
     if(running_container_id) {
+        if(exit_code)
+            openssh_server_dump_logs(running_container_id);
         stop_openssh_server(running_container_id);
         free(running_container_id);
         running_container_id = NULL;
